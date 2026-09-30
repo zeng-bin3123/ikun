@@ -220,7 +220,7 @@ P(V \le 5\%) \ge 0.95 \iff \sigma_{\text{rel}} \le \frac{5\%}{3.314} = 1.51\%
 - 主机计时会多算一次同步开销 $\varepsilon_{\text{sync}}$。脚本在空队列上单独测量它，拟合前扣除。
 - 每个分位数取所有 rank 中的最大值：集合通信由最慢的 rank 决定，所以这是一个保守上界。
 
-## 7 可证伪预测（在 4×BI-V100 上跑 `bench/latency_micro.py` 检验）
+## 7 可证伪预测（在 4×BI-V100 上跑 `python3 bench/latency_micro.py` 检验，安全协议见 §9）
 
 ```math
 \hat T(S) = 268.5 + 47.54\cdot S/\text{MiB}\ \ [\mu s]
@@ -245,3 +245,65 @@ P(V \le 5\%) \ge 0.95 \iff \sigma_{\text{rel}} \le \frac{5\%}{3.314} = 1.51\%
 - 假设 $\alpha_s$ 与算法无关，这对 one-shot 偏乐观（见 §5 的区间）。
 - 单次延迟服从对数正态是一个假设。IQR 估计 $\hat s$ 对重尾是稳健的。
 - decode 实际运行时 allreduce 之后不做主机同步，但 fence 本身就是同步，所以主机计时与设备端耗时应当接近。本基准会直接检验这一点：看 $\alpha_{\text{micro}}$ 与 $\alpha_{\text{trace}}$ 是否一致。
+
+## 9 安全协议：为什么这个基准不会把机器卡死
+
+### 9.1 致坏机制与三条中断链
+
+PR 10 的记录显示，在 corex 3.2.x 上，**中断在途的 NCCL/P2P 通信会让驱动状态永久损坏**，而且 GPU 资源不会被释放，已经因此损失 3 台机器。所以关键不在于"卡住以后怎么恢复"（没有软件手段可以恢复），而在于：**任何进程在其他 rank 还卡在与它的通信中时，都不能被强行终止。**
+
+常见做法里有三条链路会触发这种中断：
+
+| 链路 | 触发条件 | 本基准的处理 |
+|---|---|---|
+| torchrun | 任一 worker 失败，就向其余 worker 发 SIGTERM，超时后发 SIGKILL | 不用 torchrun。自带启动器从不 kill 子进程 |
+| torch ProcessGroupNCCL 看门狗 | 集合通信超时或心跳丢失时 abort 通信器或杀进程 | 设 `TORCH_NCCL_ASYNC_ERROR_HANDLING=0`、`TORCH_NCCL_ENABLE_MONITORING=0`，数据组超时设为 24h |
+| 外部看门狗（PR 10 的 `tools/gpu_watchdog.py`） | 60 秒无输出就 SIGTERM，再 SIGKILL | 不要套用它。本基准 stdout 只在结束时输出 6 行，套用必然误杀 |
+
+另外，PR 10 的 `nccl_cleanup` 用 Python 信号处理函数去调 `ncclCommAbort`。这有两个问题：
+- 主线程阻塞在卡住的集合通信里时，Python 信号处理函数根本得不到执行机会。
+- 即使执行了，它在对端仍在通信时 abort，本身就是一次中断。它自己的文档也承认 abort/reset 无效。
+
+### 9.2 协议
+
+记数据阶段为 $P_1,\dots,P_K$，依次是 canary（NCCL 通信器初始化加一次 4 KiB 自检）和 $R\times 5$ 个扫描阶段。每个阶段之前有一次 CPU 共识 $C_k$：在 gloo 控制面上对向量 $(\text{fail}_r, \text{stop}_r)$ 做 MAX-allreduce。
+
+```math
+\text{rank } r \text{ 进入 } P_k \iff C_k \text{ 在 } r \text{ 上返回 } (0,0)
+```
+
+阶段内部只有被测的 all_reduce 和 synchronize。阶段结束时各 rank 同步自己的 stream，所以**每个共识点上，参与投票的 rank 的 GPU 上都没有在途操作**。
+
+### 9.3 不变式
+
+**命题。** 若 rank $r$ 进入 $P_k$，则每个 rank $r'$ 在向 $C_k$ 贡献时都满足：健康（$\text{fail}_{r'}=0$），且未收到停止信号（$\text{stop}_{r'}=0$）。
+
+**证明。** MAX-allreduce 的结果为 $(0,0)$，当且仅当所有贡献都是 $(0,0)$。$\square$
+
+**推论（卡死的必要条件）。** $P_k$ 中发生卡死，必须有某个 rank 在窗口 $W_k = [t_{C_k},\, t_{\text{end}}(P_k)]$ 内失效。在这个窗口里：
+- SIGINT/SIGTERM 只会置标志，不会导致退出。
+- 本基准不发 SIGKILL，也不存在 torchrun 或 torch 看门狗的 abort。
+
+因此，剩下的失效原因只有外部 SIGKILL（如 OOM killer 或人工 `kill -9`）以及硬件/驱动故障。窗口之外发生的任何失败，都会在下一个共识点上被 CPU 侧发现：对端缺席时 gloo 报错，所有 rank 带退出码 2/3/4 自行退出。
+
+**暴露窗口。** 按 §7 的预测延迟估算（$w=20$，$n=200$，$R=3$）：
+
+```math
+|W| \approx \sum_k |W_k| \approx R\,(w+n)\sum_{S} \hat T(S) = 3 \times 220 \times 1405.8\,\mu s \approx 0.93\,\text{s}
+```
+
+在此之外，只需再加 canary 里通信器初始化的时间。整次运行中，其余时间（import、CUDA 初始化、预分配、统计汇总）出任何错都只发生在 CPU 侧。
+
+### 9.4 残余风险与卡住后的处理
+
+- **阶段内异常**（例如设备报错）：本 rank 不退出，原地停车。理由是对端可能正卡在与它的通信中，拆掉自己这一端是更大的风险。
+- **疑似卡住**（单个阶段超过 `--hang-after` 秒）：只在 stderr 报告，并写入 `/tmp/latency_micro.rank{r}.hang.json`。启动器到 `--deadline` 时同样只报告各 rank 的进程状态（`/proc/<pid>/status`），不 kill。
+- **卡住后请保留现场**：记录现场文件、`/proc/<pid>/status`、`ixsmi` 的输出。不要 `kill -9`。"卡住但未被中断"的进程能否靠重启恢复，在 corex 上尚无数据；但"被中断"已知会致坏。
+
+### 9.5 分级上机顺序
+
+1. 在目标机器上先跑 `python3 bench/latency_micro.py --cpu`：验证协议和环境，不碰 GPU。
+2. 在已受损、但仍有可用卡的机器上，用 `CUDA_VISIBLE_DEVICES` 选两张卡跑 `--nproc 2`：先在低价值硬件上验证真实的 NCCL 路径。
+3. 最后在干净的 4 卡机器上跑 `python3 bench/latency_micro.py`。
+
+**验证。** `tests/python/test_latency_micro_safety.py` 用故障注入（崩溃、异常、健康检查失败、SIGTERM）在 CPU/gloo 上检验 §9.3 的不变式：所有 rank 进入过的数据阶段序列必须完全相同，且不包含故障发生处的阶段；所有进程必须自行退出。

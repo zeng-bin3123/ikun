@@ -1,9 +1,21 @@
 #!/usr/bin/env python3
 r"""all_reduce 延迟微基准 —— M0「先做尺子」(issue #1)
 
-    torchrun --nproc_per_node=4 bench/latency_micro.py
+    python3 bench/latency_micro.py            # 自带启动器（推荐，不用 torchrun）
+    python3 bench/latency_micro.py --cpu      # CPU/gloo 演练，从不碰 GPU
 
-理论与推导见 docs/ALLREDUCE_LATENCY_MODEL.md。要点：
+理论与推导见 docs/ALLREDUCE_LATENCY_MODEL.md（§1–8 模型，§9 安全协议）。
+
+安全协议（BI-V100/corex：中断在途 NCCL 通信会永久损坏驱动，且 GPU 资源不释放）：
+- 控制面全部走 gloo（CPU）：rendezvous、每阶段前的共识、统计汇总都不经过 GPU
+- 数据面（nccl）只跑被测的 all_reduce；进入每个数据阶段前，所有 rank 先在 CPU 上达成共识
+  （都健康、都没收到停止信号），否则所有 rank 一起在 CPU 侧退出，GPU 上无在途操作
+- 从不中断在途通信：不用 torchrun（它会在一个 worker 失败时杀掉其余 worker）；
+  关闭 torch NCCL 看门狗的 abort/kill；SIGINT/SIGTERM 只置标志，在阶段边界统一退出；
+  疑似卡住只报告、写现场文件，不自动 kill
+- 数据阶段总暴露约 1 秒；其余时间出任何错都只会发生在 CPU 侧
+
+测量要点：
 - 模型 T(S) = α + β·S（Hockney α-β）。decode 包 4KB ≪ S* = α/β ≈ 5.6MiB，
   所以本基准测的核心量是 α；β 由大包带宽基准定更准（本扫描里 β 相对误差 ~11%）
 - 5 档 4KB→1MB，每档 200 次，整轮重跑 3 次；stdout 恰好 6 行（仅 rank0）
@@ -18,16 +30,28 @@ import argparse
 import json
 import math
 import os
+import signal
 import socket
 import statistics
 import subprocess
+import sys
+import threading
 import time
+from datetime import timedelta
 from datetime import datetime, timezone
 
 SIZES = [4 << 10, 16 << 10, 64 << 10, 256 << 10, 1 << 20]  # 4KB 16KB 64KB 256KB 1MB
 REPO = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 Z75 = 0.6744897501960817      # Φ⁻¹(0.75)
 DOC = "docs/ALLREDUCE_LATENCY_MODEL.md"
+
+# 禁止 torch 在超时/心跳丢失时 abort 通信或杀进程（新旧两套变量名都设）
+SAFE_ENV = {
+    "TORCH_NCCL_ASYNC_ERROR_HANDLING": "0", "NCCL_ASYNC_ERROR_HANDLING": "0",
+    "TORCH_NCCL_ENABLE_MONITORING": "0",
+    "TORCH_NCCL_BLOCKING_WAIT": "0", "NCCL_BLOCKING_WAIT": "0",
+}
+EXIT_OK, EXIT_FAIL, EXIT_LOST, EXIT_STOP, EXIT_HUNG = 0, 2, 3, 4, 5
 
 
 # ---------- 纯函数（不依赖 torch，便于单测） ----------
@@ -147,7 +171,8 @@ def build_result(sha, dirty, host, world, lines, an, p50_runs):
         "commit": sha,
         "host": host,
         "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
-        "cmd": f"torchrun --nproc_per_node={world} bench/latency_micro.py",
+        "cmd": ("torchrun --nproc_per_node={} bench/latency_micro.py" if "TORCHELASTIC_RUN_ID"
+                in os.environ else "python3 bench/latency_micro.py --nproc {}").format(world),
         "metrics": {
             "latency_p50_variance_pct": r2(an["worst"]),
             "output_lines": len(lines),  # 只计本脚本打印的行
@@ -173,6 +198,11 @@ def build_result(sha, dirty, host, world, lines, an, p50_runs):
     }
 
 
+def verdict(fail, stop):
+    """共识向量 → 决定。fail/stop 是各 rank 取 MAX 后的结果。"""
+    return "fail" if fail else ("stop" if stop else "go")
+
+
 def git_state():
     def run(*args):
         return subprocess.run(["git", "-C", REPO, *args], capture_output=True,
@@ -182,10 +212,292 @@ def git_state():
     return run("rev-parse", "HEAD"), bool(dirty)
 
 
-# ---------- 基准本体 ----------
+# ---------- 安全护栏 ----------
+
+class Guard:
+    """每个 rank 一个：信号只置标志；看门狗线程只报告不 kill。"""
+
+    def __init__(self, rank, hang_after):
+        self.rank, self.hang_after, self.stop = rank, hang_after, False
+        self.stage_name, self._t = "init", time.monotonic()
+        self.in_data_phase = False
+        self._trace = os.environ.get("LATENCY_MICRO_TRACE")   # 测试用：记录进入过的数据阶段
+        try:
+            os.remove(f"/tmp/latency_micro.rank{rank}.hang.json")  # 清掉上次的现场文件
+        except OSError:
+            pass
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            signal.signal(sig, self._on_signal)
+        threading.Thread(target=self._watch, daemon=True).start()
+
+    def log(self, msg):
+        print(f"[latency_micro r{self.rank}] {msg}", file=sys.stderr, flush=True)
+
+    def _on_signal(self, signum, _frame):
+        if not self.stop:
+            self.log(f"收到信号 {signum}：将在下一个阶段边界与所有 rank 一起退出。不要 kill -9")
+        self.stop = True
+
+    def stage(self, name, data=False):
+        self.stage_name, self._t, self.in_data_phase = name, time.monotonic(), data
+        if data and self._trace:
+            with open(os.path.join(self._trace, f"rank{self.rank}.txt"), "a") as f:
+                f.write(name + "\n")
+
+    def _watch(self):
+        reported = None
+        while True:
+            time.sleep(1.0)
+            dt = time.monotonic() - self._t
+            if dt > self.hang_after and reported != self.stage_name:
+                reported = self.stage_name
+                self.log(f"疑似卡住：阶段 {self.stage_name} 已 {dt:.0f}s（pid {os.getpid()}）。"
+                         f"不会自动 kill —— 中断在途通信是驱动损坏的已知诱因。保留现场，见 {DOC} §9")
+                try:
+                    with open(f"/tmp/latency_micro.rank{self.rank}.hang.json", "w") as f:
+                        json.dump({"rank": self.rank, "pid": os.getpid(), "stage": self.stage_name,
+                                   "data_phase": self.in_data_phase, "seconds": round(dt)}, f)
+                except OSError:
+                    pass
+
+
+def _fault(rank, where):
+    """测试用故障注入：LATENCY_MICRO_FAULT=rank:where:{exit|raise|signal}，在共识之前触发。"""
+    spec = os.environ.get("LATENCY_MICRO_FAULT", "")
+    if spec.count(":") != 2:
+        return
+    r, w, kind = spec.split(":")
+    if int(r) != rank or w != where:
+        return
+    if kind == "exit":
+        os._exit(9)
+    if kind == "raise":
+        raise RuntimeError(f"injected fault at {where}")
+    if kind == "signal":
+        os.kill(os.getpid(), signal.SIGTERM)
+
+
+# ---------- worker ----------
+
+def worker(args):
+    for k, v in SAFE_ENV.items():
+        os.environ.setdefault(k, v)
+    import torch
+    import torch.distributed as dist
+
+    rank, world = int(os.environ["RANK"]), int(os.environ["WORLD_SIZE"])
+    local = int(os.environ.get("LOCAL_RANK", rank))
+    g = Guard(rank, args.hang_after)
+    if "TORCHELASTIC_RUN_ID" in os.environ and rank == 0:
+        g.log("警告：torchrun 会在任一 worker 失败时杀掉其余 worker，可能中断在途通信；"
+              "推荐直接 python3 bench/latency_micro.py")
+    use_cuda = torch.cuda.is_available() and not args.cpu
+
+    def finish(code):
+        """非正常退出：只在本 rank GPU 上无在途操作时调用；不 destroy、不 abort。"""
+        sys.stdout.flush()
+        sys.stderr.flush()
+        os._exit(code)
+
+    # S0 rendezvous：控制面 gloo，超时后抛异常而不是挂死
+    g.stage("rendezvous")
+    dist.init_process_group("gloo", timeout=timedelta(seconds=args.ctrl_timeout))
+
+    def agree(ok, where):
+        """CPU 共识。返回 go/fail/stop/lost。"""
+        vec = torch.tensor([0 if ok else 1, 1 if g.stop else 0], dtype=torch.int32)
+        try:
+            dist.all_reduce(vec, op=dist.ReduceOp.MAX)
+        except Exception as e:  # 对端已退出或超时：只发生在 CPU 侧
+            g.log(f"共识 @{where} 失败（对端缺席）：{type(e).__name__}")
+            return "lost"
+        return verdict(*vec.tolist())
+
+    def bail(v, where):
+        g.log(f"@{where} → {v}，所有 rank 在 CPU 侧退出，未进入下一个数据阶段")
+        finish({"fail": EXIT_FAIL, "stop": EXIT_STOP, "lost": EXIT_LOST}[v])
+
+    # S1 本地健康检查（不涉及任何通信）+ 预分配全部缓冲区
+    ok = True
+    try:
+        _fault(rank, "health")
+        if use_cuda:
+            torch.cuda.set_device(local)
+            device, dtype, sync = torch.device("cuda", local), torch.float16, torch.cuda.synchronize
+        else:  # gloo 不支持 fp16 allreduce
+            device, dtype, sync = torch.device("cpu"), torch.float32, (lambda: None)
+        g.stage("health")
+        x = torch.ones(1024, dtype=dtype, device=device) * 2
+        sync()
+        if float(x.sum().item()) != 2048.0:
+            raise RuntimeError("本地 GPU 运算结果错误")
+        elem = torch.tensor([], dtype=dtype).element_size()
+        chk = torch.ones(SIZES[0] // elem, dtype=dtype, device=device)
+        bufs = [torch.zeros(n // elem, dtype=dtype, device=device) for n in SIZES]  # 全 0 不溢出
+        eps = []  # ε_sync：空队列 synchronize + 计时开销
+        for _ in range(args.iters):
+            sync()
+            t0 = time.perf_counter()
+            sync()
+            eps.append((time.perf_counter() - t0) * 1e6)
+    except Exception as e:
+        g.log(f"本地准备失败：{type(e).__name__}: {e}")
+        ok = False
+    v = agree(ok, "health")
+    if v != "go":
+        bail(v, "health")
+
+    # 数据面：nccl（GPU）/ gloo（--cpu 演练）。超时设到极大，配合 SAFE_ENV 永不 abort
+    data = dist.new_group(backend="nccl" if use_cuda else "gloo", timeout=timedelta(hours=24))
+
+    def data_phase(name, fn):
+        """共识 → 数据阶段 → 同步。阶段内异常说明对端可能正卡在与本 rank 的通信里：原地停车。"""
+        try:
+            _fault(rank, name)
+            ok = True
+        except Exception as e:
+            g.log(f"@{name} 前出错：{type(e).__name__}: {e}")
+            ok = False
+        v = agree(ok, name)
+        if v != "go":
+            bail(v, name)
+        g.stage(name, data=True)
+        try:
+            out = fn()
+            sync()
+        except Exception as e:
+            g.log(f"数据阶段 {name} 内异常：{type(e).__name__}: {e}。对端可能正等本 rank，"
+                  f"原地停车不退出（见 {DOC} §9）")
+            g.stage(f"parked@{name}")
+            while True:
+                time.sleep(3600)
+        g.stage(f"after:{name}")
+        return out
+
+    # S2 canary：首个数据集合 = NCCL 通信器初始化 + 正确性自检
+    def canary():
+        dist.all_reduce(chk, group=data)
+        return chk
+    data_phase("canary", canary)
+    ok = bool(torch.all(chk == world))
+    if not ok:
+        g.log(f"canary 结果错误：期望 {world}，得到 {chk[0].item()}")
+    v = agree(ok, "canary-check")  # 所有 rank 都调用，结果错误也在 CPU 侧统一退出
+    if v != "go":
+        bail(v, "canary-check")
+
+    # S3 扫描：每个 (run, size) 是一个独立数据阶段
+    qs = (0.25, 0.50, 0.75, 0.99)
+    stats = torch.zeros(len(qs), args.reruns, len(SIZES), dtype=torch.float32)  # CPU
+    for r in range(args.reruns):
+        for i, buf in enumerate(bufs):
+            def sweep(buf=buf):
+                for _ in range(args.warmup):
+                    dist.all_reduce(buf, group=data)
+                sync()
+                samples = []
+                for _ in range(args.iters):
+                    sync()
+                    t0 = time.perf_counter()
+                    dist.all_reduce(buf, group=data)
+                    sync()
+                    samples.append((time.perf_counter() - t0) * 1e6)
+                return samples
+            samples = data_phase(f"run{r}/{size_label(SIZES[i])}", sweep)
+            for j, qq in enumerate(qs):
+                stats[j, r, i] = percentile(samples, qq)
+
+    # S4 汇总：全部走 gloo（CPU），取最慢 rank
+    v = agree(True, "done")
+    if v != "go":
+        bail(v, "done")
+    g.stage("gather")
+    eps_t = torch.tensor([percentile(eps, 0.5)], dtype=torch.float32)
+    dist.all_reduce(stats, op=dist.ReduceOp.MAX)
+    dist.all_reduce(eps_t, op=dist.ReduceOp.MAX)
+    q = {k: stats[j].tolist() for j, k in enumerate(("p25", "p50", "p75", "p99"))}
+
+    if rank == 0:
+        write = use_cuda and not args.no_write
+        out = os.path.join(REPO, "bench", "results", f"gate-{args.issue:03d}.json")
+        an = analyze(q, eps_t.item(), args.iters, args.layers, args.hidden, elem)
+        meta = dict(dtype=str(dtype).replace("torch.", ""), world=world,
+                    backend="nccl" if use_cuda else "gloo", iters=args.iters, runs=args.reruns,
+                    p50_runs_col=lambda i: [row[i] for row in q["p50"]],
+                    sink=f"→ {os.path.relpath(out, REPO)}" if write else "dry-run 未写门禁文件")
+        lines = format_report(meta, an)
+        for line in lines:
+            print(line, flush=True)
+        if write:
+            sha, dirty = git_state()
+            host = f"{socket.gethostname()} ({world}x {torch.cuda.get_device_name(local)}, nccl)"
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            with open(out, "w") as f:
+                json.dump(build_result(sha, dirty, host, world, lines, an, q["p50"]),
+                          f, ensure_ascii=False, indent=1)
+
+    # 正常收尾：所有 rank 都已同步、无在途操作，才销毁通信器
+    agree(True, "teardown")
+    g.stage("teardown")
+    dist.destroy_process_group(data)
+    dist.destroy_process_group()
+    return EXIT_OK
+
+
+# ---------- 启动器（不 import torch，不碰 GPU，永不 kill 子进程） ----------
+
+def _free_port():
+    with socket.socket() as s:
+        s.bind(("127.0.0.1", 0))
+        return s.getsockname()[1]
+
+
+def _proc_state(pid):
+    try:
+        with open(f"/proc/{pid}/status") as f:
+            return next((l.split(":", 1)[1].strip() for l in f if l.startswith("State")), "?")
+    except OSError:
+        return "gone"
+
+
+def launch(args):
+    port, procs = _free_port(), []
+    for r in range(args.nproc):
+        env = dict(os.environ, RANK=str(r), LOCAL_RANK=str(r), WORLD_SIZE=str(args.nproc),
+                   MASTER_ADDR="127.0.0.1", MASTER_PORT=str(port))
+        procs.append(subprocess.Popen([sys.executable, os.path.abspath(__file__), *sys.argv[1:]],
+                                      env=env))
+
+    def on_signal(signum, _frame):  # 只转告，由 worker 在阶段边界统一退出
+        print(f"[latency_micro launcher] 收到信号 {signum}，已转告 worker 在阶段边界退出；"
+              f"不会 kill", file=sys.stderr, flush=True)
+        for p in procs:
+            if p.poll() is None:
+                try:
+                    p.send_signal(signal.SIGTERM)
+                except OSError:
+                    pass
+    for sig in (signal.SIGINT, signal.SIGTERM):
+        signal.signal(sig, on_signal)
+
+    deadline = time.monotonic() + args.deadline
+    while time.monotonic() < deadline and any(p.poll() is None for p in procs):
+        time.sleep(0.2)
+    alive = [(r, p) for r, p in enumerate(procs) if p.poll() is None]
+    if alive:
+        for r, p in alive:
+            print(f"[latency_micro launcher] rank{r} pid {p.pid} 仍在运行（{_proc_state(p.pid)}），"
+                  f"现场文件 /tmp/latency_micro.rank{r}.hang.json。未 kill，见 {DOC} §9",
+                  file=sys.stderr, flush=True)
+        return EXIT_HUNG
+    codes = [p.returncode for p in procs]
+    return next((c for c in codes if c), EXIT_OK)
+
 
 def main():
     ap = argparse.ArgumentParser()
+    ap.add_argument("--nproc", type=int, default=4, help="启动器模式下的 rank 数")
+    ap.add_argument("--cpu", action="store_true", help="CPU/gloo 演练，不碰 GPU")
     ap.add_argument("--iters", type=int, default=200)
     ap.add_argument("--warmup", type=int, default=20)
     ap.add_argument("--reruns", type=int, default=3)
@@ -193,85 +505,13 @@ def main():
     ap.add_argument("--hidden", type=int, default=2048, help="hidden size h")
     ap.add_argument("--issue", type=int, default=1, help="写 bench/results/gate-NNN.json")
     ap.add_argument("--no-write", action="store_true", help="只打印，不写门禁文件")
+    ap.add_argument("--ctrl-timeout", type=float, default=120, help="CPU 共识等待对端的秒数")
+    ap.add_argument("--hang-after", type=float, default=60, help="单阶段超过此秒数即报告疑似卡住")
+    ap.add_argument("--deadline", type=float, default=900, help="启动器等待总秒数（到点只报告不 kill）")
     args = ap.parse_args()
-
-    import torch
-    import torch.distributed as dist
-
-    use_cuda = torch.cuda.is_available()
-    backend = "nccl" if use_cuda else "gloo"
-    if use_cuda:  # 必须在建通信组之前绑卡，否则各 rank 的 barrier/communicator 可能都落在 GPU0
-        torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", 0)))
-    dist.init_process_group(backend=backend)
-    rank, world = dist.get_rank(), dist.get_world_size()
-    try:
-        if use_cuda:
-            device, dtype, sync = torch.device("cuda"), torch.float16, torch.cuda.synchronize
-        else:  # gloo 不支持 fp16 allreduce
-            device, dtype, sync = torch.device("cpu"), torch.float32, (lambda: None)
-        elem = torch.tensor([], dtype=dtype).element_size()
-
-        # 正确性自检：ones 求和应等于 world
-        chk = torch.ones(SIZES[0] // elem, dtype=dtype, device=device)
-        dist.all_reduce(chk)
-        sync()
-        if not torch.all(chk == world):
-            raise RuntimeError(f"all_reduce 结果错误: 期望 {world}, 得到 {chk[0].item()}")
-
-        # ε_sync：空队列时 synchronize + 计时本身的开销
-        eps = []
-        for _ in range(args.iters):
-            sync()
-            t0 = time.perf_counter()
-            sync()
-            eps.append((time.perf_counter() - t0) * 1e6)
-
-        bufs = [torch.zeros(n // elem, dtype=dtype, device=device) for n in SIZES]  # 全 0，不溢出
-        qs = (0.25, 0.50, 0.75, 0.99)
-        stats = torch.zeros(len(qs), args.reruns, len(SIZES), dtype=torch.float32)
-        for r in range(args.reruns):
-            for i, buf in enumerate(bufs):
-                for _ in range(args.warmup):
-                    dist.all_reduce(buf)
-                sync()
-                dist.barrier()
-                samples = []
-                for _ in range(args.iters):
-                    sync()
-                    t0 = time.perf_counter()
-                    dist.all_reduce(buf)
-                    sync()
-                    samples.append((time.perf_counter() - t0) * 1e6)
-                for j, qq in enumerate(qs):
-                    stats[j, r, i] = percentile(samples, qq)
-
-        # 取最慢 rank（fp32：各家 ccl 都支持）
-        stats = stats.to(device)
-        eps_t = torch.tensor([percentile(eps, 0.5)], dtype=torch.float32, device=device)
-        dist.all_reduce(stats, op=dist.ReduceOp.MAX)
-        dist.all_reduce(eps_t, op=dist.ReduceOp.MAX)
-        q = {k: stats[j].cpu().tolist() for j, k in enumerate(("p25", "p50", "p75", "p99"))}
-
-        if rank == 0:
-            write = use_cuda and not args.no_write
-            out = os.path.join(REPO, "bench", "results", f"gate-{args.issue:03d}.json")
-            an = analyze(q, eps_t.item(), args.iters, args.layers, args.hidden, elem)
-            meta = dict(dtype=str(dtype).replace("torch.", ""), world=world, backend=backend,
-                        iters=args.iters, runs=args.reruns,
-                        p50_runs_col=lambda i: [r[i] for r in q["p50"]],
-                        sink=f"→ {os.path.relpath(out, REPO)}" if write else "dry-run 未写门禁文件")
-            lines = format_report(meta, an)
-            for line in lines:
-                print(line, flush=True)
-            if write:
-                sha, dirty = git_state()
-                host = f"{socket.gethostname()} ({world}x {torch.cuda.get_device_name(0)}, {backend})"
-                os.makedirs(os.path.dirname(out), exist_ok=True)
-                with open(out, "w") as f:
-                    json.dump(build_result(sha, dirty, host, world, lines, an, q["p50"]),
-                              f, ensure_ascii=False, indent=1)
-    finally:
-        dist.destroy_process_group()
+    if "RANK" in os.environ:
+        sys.exit(worker(args))
+    sys.exit(launch(args))
 
 
 if __name__ == "__main__":
