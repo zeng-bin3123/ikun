@@ -114,6 +114,13 @@ def range_cdf(w, n=3, lo=-8.0, hi=8.0, steps=4000):
     return tot * h
 
 
+def fence_counts(layers, p):
+    """通信结构的零参数预测（docs §3.1，已在 L=40/p=4 与 L=4/p=2 两套配置上验证）。"""
+    s, n = 2 * (p - 1), 2 * layers + 1
+    return {"steps": s, "n_allreduce": n, "fenceWait": 2 * s * n, "fenceOps": s * n,
+            "elemSum": (p - 1) * n, "kernelCopy": (p - 1) * n}
+
+
 def decode_comm_ms(alpha_us, beta_us_per_byte, layers, hidden, dtype_bytes=2, batch=1):
     """decode 每步 TP allreduce 总耗时：N·(α + β·b·h·s_d)，N = 2L + 1。"""
     n_ar = 2 * layers + 1

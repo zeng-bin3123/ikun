@@ -57,6 +57,36 @@ def test_trace_microstructure_predicts_alpha():
     assert abs(alpha_trace - alpha_fit) / alpha_fit < 0.01
 
 
+def test_fence_counts_match_two_independent_configs():
+    """§3.1 零参数外推：同一公式同时命中 L=40/p=4 的 972 与 L=4/p=2 的 36。"""
+    big = lm.fence_counts(layers=40, p=4)
+    assert (big["n_allreduce"], big["steps"]) == (81, 6)
+    assert (big["fenceWait"], big["fenceOps"]) == (972, 486)
+    assert big["elemSum"] == big["kernelCopy"] == 243
+    mini = lm.fence_counts(layers=4, p=2)      # PR10 session 5 实测 36，未用于标定
+    assert mini["fenceWait"] == 36
+    # 被排除的替代假设
+    assert 2 * 6 * 40 != 972 and 2 * 6 * 9 != 36
+
+
+def test_fence_hypothesis_is_uniquely_identified():
+    """§3.1 可辨识性：400 组 (N=aL+b, s=c(p-1)+d) 中只有 (2,1,2,0) 同时命中两点。"""
+    obs = [(40, 4, 972), (4, 2, 36)]
+    hits = [(a, b, c, d)
+            for a in range(4) for b in range(-2, 3) for c in range(4) for d in range(-2, 3)
+            if all((c * (p - 1) + d) > 0 and (a * L + b) > 0
+                   and 2 * (c * (p - 1) + d) * (a * L + b) == o for L, p, o in obs)]
+    assert hits == [(2, 1, 2, 0)]
+
+
+def test_infiniccl_overhead_confirms_n81():
+    """§3.2：12.5→12.2 tok/s ⇒ 每次 allreduce 多 24.3us，与 PRD 的 ~25us/dispatch 吻合。"""
+    d_ms = 1000 / 12.2 - 1000 / 12.5
+    assert d_ms == pytest.approx(1.97, abs=0.01)
+    assert d_ms * 1000 / 81 == pytest.approx(24.3, abs=0.2)     # N=81 → 吻合
+    assert d_ms * 1000 / 40 > 45                                 # N=40 → 与 25us/call 矛盾
+
+
 def test_decode_comm_and_amdahl_bound():
     """§4：T_comm(b=1) ≈ 21.76ms；通信归零的上限 ≈ 17.1 tok/s。"""
     ms, n = lm.decode_comm_ms(268.5, 47.54 / MiB, layers=40, hidden=2048)
