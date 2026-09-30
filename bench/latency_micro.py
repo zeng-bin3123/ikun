@@ -83,7 +83,7 @@ def build_result(sha, dirty, host, world, lines, worst, p50_runs):
         "cmd": f"torchrun --nproc_per_node={world} bench/latency_micro.py",
         "metrics": {
             "latency_p50_variance_pct": round(worst, 2),
-            "output_lines": len(lines),
+            "output_lines": len(lines),  # 只计本脚本打印的行；第三方库写 stdout 的不在内
             **{f"allreduce_{size_label(n).lower()}_us": round(statistics.median(col(i)), 2)
                for i, n in enumerate(SIZES)},
         },
@@ -111,11 +111,12 @@ def main():
 
     use_cuda = torch.cuda.is_available()
     backend = "nccl" if use_cuda else "gloo"
+    if use_cuda:  # 必须在建通信组之前绑卡，否则各 rank 的 barrier/communicator 可能都落在 GPU0
+        torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", 0)))
     dist.init_process_group(backend=backend)
     rank, world = dist.get_rank(), dist.get_world_size()
     try:
         if use_cuda:
-            torch.cuda.set_device(int(os.environ.get("LOCAL_RANK", rank)))
             device, dtype = torch.device("cuda"), torch.float16
             sync = torch.cuda.synchronize
         else:
