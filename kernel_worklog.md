@@ -321,3 +321,85 @@ Embedding：15
 纯计算小计：40475
 实际 decode step：87000
 差额（AllReduce + Python dispatch + scheduler）：46525
+
+附录：编译工具链（2026-10-08 实测）
+
+BI-V100 上的 /usr/local/corex/bin/nvcc 是一个 194 字节的 bash 脚本，全部内容是用 cat << EOF 打印一段 NVIDIA 版权信息，伪装成 nvcc 10.2.89。它不编译任何东西。执行 nvcc -arch=sm_70 file.cu 会返回退出码 0 但不产生任何输出文件。
+
+真实编译器是同目录下的 clang-16（105 MB）和 llc（45 MB）。编译链路是 clang-16 CUDA 前端 → LLVM IR → llc -march=bi 后端 → ivcore 原生机器码。
+
+已验证的编译命令：
+
+/usr/local/corex/bin/clang++ -x cuda file.cu -o output \
+    --cuda-gpu-arch=ivcore11 \
+    --cuda-path=/usr/local/corex-3.2.3 \
+    -L/usr/local/corex/lib64 -lcudart \
+    -I/usr/local/corex/include
+
+排除的失败路径：--cuda-gpu-arch=sm_70 报 unknown target CPU（后端只认 ivcore10/ivcore11/ivcore20）。--cuda-gpu-arch=bi 报 unsupported CUDA gpu architecture（这是 LLVM target 名，不是 clang 前端的 arch 名）。只有 ivcore11 能通过。
+
+libdevice 位于 /usr/local/corex-3.2.3/nvvm/libdevice/libdevice.compute_bi.10.bc。
+
+llc -march=bi -mattr=help 输出的完整 feature list：
+
+可用 CPU：
+    ivcore10    第一代
+    ivcore11    第二代（当前硬件）
+    ivcore20    第三代（工具链已有，硬件未部署）
+
+可用 feature：
+    async-copy                  异步拷贝标准指令（Ampere 级特性）
+    async-copy-sme              异步拷贝 SME 指令
+    async-copy-soft-sme         异步拷贝 libdevice 软件实现
+    byte-permute                字节排列
+    flat-address-space          统一地址空间
+    fp64                        双精度
+    fmaf / fast-fmaf            单精度 FMA
+    local-private-mem           硬件私有内存
+    localmemorysize131072       128 KB shared memory
+    matrix-src2-inline-const    矩阵操作内联常量
+    BIG_ISLAND                  GPU 世代代号
+    QUASAR                      GPU 世代代号
+    isaver1.0.0 / 1.0.1 / 2.0.0    ISA 版本号
+
+另有 PTXToLLVM 工具（/usr/local/corex/bin/PTXToLLVM），接受 --iluvatarTarget 参数将 PTX 转为 bi 后端的 LLVM IR。
+
+async-copy 和 128KB shared memory 已经在硬件 feature list 里，但 CUDA runtime 头文件（CUDART_VERSION=10020）没有暴露对应 API。如果有人更新 cuda_runtime_api.h 并在 libcudart.so 里实现这些 API，就可以使用这些硬件能力。
+
+P2P 传输实测（2026-10-08，BDF 4B-4E 机器）：
+
+不同机器行为不同。BDF 9B-9E（NUMA 2）的 4 卡 P2P direct copy 会 hang。BDF 4B-4E（NUMA 1）的 4 卡 P2P 正常。同型号、同驱动、同 SDK。
+
+BDF 4B-4E 机器的 P2P bandwidth profile：
+
+    4 KB:     ~115 μs    0.03 GB/s    latency-bound
+    64 KB:    ~107 μs    0.57 GB/s    latency-bound
+    256 KB:   ~110 μs    2.2 GB/s     transition
+    1 MB:     ~135 μs    7.2 GB/s     bandwidth-ramp
+    16 MB:    ~726 μs    21.5 GB/s    near-peak
+    256 MB:   ~10190 μs  24.5 GB/s    peak（PCIe 4.0 x16 的 98%）
+
+alpha-beta model：α ≈ 100 μs，β ≈ 24.5 GB/s。方向对称（充分 warmup 后）。100 μs 是固定开销底线，4 KB 和 64 KB 延迟几乎相同。
+
+InfiniCCL 验证记录（2026-10-08）
+
+BI-V100 = ivcore10，不是 ivcore11。ivcore11 编译成功但在 BI-V100 上产出全零。ivcore10 产出正确结果。
+
+映射关系：BI-V100 = ivcore10（第一代），BI-150 = ivcore11（第二代，xLLM 目标），ivcore20（第三代，工具链已有硬件未部署）。
+
+编译命令修正：--cuda-gpu-arch=ivcore10（BI-V100），--cuda-gpu-arch=ivcore11（BI-150）。
+
+三台机器状态：
+    cc-d3fdb40a (BDF 9B-9E, NUMA 2): GPU 0,1,2 可用, GPU 3 hang, P2P 全通
+    cc-58e31738 (BDF 4B-4E, NUMA 1): GPU 0,1,2 hang, GPU 3 可用, 只能单卡
+    cc-adc62d1c (BDF 4B-4E, NUMA 1): GPU 0,1,2,3 可用, P2P 全通
+
+common_kernel.h 5/5 测试通过（cc-d3fdb40a GPU 0,1,2 + cc-58e31738 GPU 3）：
+    warp_reduce_sum: 2016 (warp=64, sum of 0..63)
+    warp_reduce_max: 63
+    block_reduce_sum: 256 (256 threads)
+    block_reduce_data: 32640 (sum of 0..255)
+    vectorized_copy: 1024 floats
+
+P2P 通信验证（cc-d3fdb40a, GPU 0,1,2）：
+    cudaMemcpyPeer 6 对全部正确，数据完整无误。
