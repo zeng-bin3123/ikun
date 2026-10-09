@@ -57,6 +57,28 @@ struct MultiOp<FUNC, half> {
 };
 
 template<class FUNC>
+struct MultiOp<FUNC, char> {
+    __device__ __forceinline__ PackType operator()(PackType a, PackType b) const {
+        union { PackType p; char c[8]; } ua, ub, ur;
+        ua.p = a; ub.p = b;
+        #pragma unroll
+        for (int i = 0; i < 8; i++) ur.c[i] = FUNC()(ua.c[i], ub.c[i]);
+        return ur.p;
+    }
+};
+
+template<class FUNC>
+struct MultiOp<FUNC, unsigned char> {
+    __device__ __forceinline__ PackType operator()(PackType a, PackType b) const {
+        union { PackType p; unsigned char c[8]; } ua, ub, ur;
+        ua.p = a; ub.p = b;
+        #pragma unroll
+        for (int i = 0; i < 8; i++) ur.c[i] = FUNC()(ua.c[i], ub.c[i]);
+        return ur.p;
+    }
+};
+
+template<class FUNC>
 struct MultiOp<FUNC, int> {
     __device__ __forceinline__ PackType operator()(PackType a, PackType b) const {
         union { PackType p; int i[2]; } ua, ub, ur;
