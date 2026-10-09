@@ -3,6 +3,9 @@
 #include <cstdlib>
 #include <cstring>
 
+static infcclResult_t infcclIpcSetup(infcclComm_t comm);
+static void infcclIpcCleanup(infcclComm_t comm);
+
 InfcclDebugLevel infcclDebugLevel = INFCCL_WARN;
 
 static void initDebug() {
@@ -255,7 +258,7 @@ infcclResult_t infcclCommCount(const infcclComm_t comm, int* count) { *count = c
 infcclResult_t infcclCommCuDevice(const infcclComm_t comm, int* device) { *device = comm->cudaDev; return infcclSuccess; }
 infcclResult_t infcclCommUserRank(const infcclComm_t comm, int* rank) { *rank = comm->rank; return infcclSuccess; }
 
-infcclResult_t infcclIpcSetup(infcclComm_t comm) {
+static infcclResult_t infcclIpcSetup(infcclComm_t comm) {
     int savedDev; cudaGetDevice(&savedDev);
     memset(&comm->ipc, 0, sizeof(infcclIpcConn));
 
@@ -268,7 +271,7 @@ infcclResult_t infcclIpcSetup(infcclComm_t comm) {
     return infcclSuccess;
 }
 
-void infcclIpcCleanup(infcclComm_t comm) {
+static void infcclIpcCleanup(infcclComm_t comm) {
     int savedDev; cudaGetDevice(&savedDev);
     for (int i = 0; i < comm->nDev; i++) {
         for (int j = 0; j < comm->nDev; j++) {
