@@ -3,30 +3,42 @@
 #include <cuda_fp16.h>
 
 template<typename T>
-static infcclResult_t stagedAllGatherImpl(void** sendbufs, void** recvbufs,
+static infcclResult_t ipcAllGather(void** sendbufs, void** recvbufs,
     int sendcount, infcclComm_t comm, cudaStream_t stream) {
     int ndev = comm->nDev;
-    int rootDev = comm->devs[0];
     size_t chunkBytes = sendcount * sizeof(T);
     size_t totalBytes = ndev * chunkBytes;
-
     int savedDev; cudaGetDevice(&savedDev);
-    CUDACHECK(cudaSetDevice(rootDev));
 
-    infcclResult_t r = infcclEnsureStaged(comm, totalBytes);
+    infcclResult_t r = infcclIpcExchangeBuffers(comm, sendbufs, chunkBytes);
     if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-    for (int g = 0; g < ndev; g++) {
-        CUDACHECK(cudaMemcpyPeer(
-            (char*)comm->staged + g * chunkBytes, rootDev,
-            sendbufs[g], comm->devs[g], chunkBytes));
-    }
+    CUDACHECK(cudaSetDevice(comm->devs[0]));
+    r = infcclEnsureStaged(comm, totalBytes);
+    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-    for (int g = 0; g < ndev; g++) {
-        CUDACHECK(cudaMemcpyPeer(
-            recvbufs[g], comm->devs[g],
-            comm->staged, rootDev, totalBytes));
+    cudaStream_t s0 = comm->ipc.streams[0];
+    CUDACHECK(cudaMemcpyAsync(comm->staged, sendbufs[0], chunkBytes, cudaMemcpyDeviceToDevice, s0));
+    for (int g = 1; g < ndev; g++) {
+        void* src_on_0 = comm->ipc.mapped[g][0];
+        CUDACHECK(cudaMemcpyAsync((char*)comm->staged + g * chunkBytes, src_on_0,
+            chunkBytes, cudaMemcpyDeviceToDevice, s0));
     }
+    CUDACHECK(cudaStreamSynchronize(s0));
+
+    infcclResult_t r2 = infcclIpcExchangeBuffers(comm, recvbufs, totalBytes);
+    if (r2 != infcclSuccess) { cudaSetDevice(savedDev); return r2; }
+
+    CUDACHECK(cudaSetDevice(comm->devs[0]));
+    CUDACHECK(cudaMemcpyAsync(recvbufs[0], comm->staged, totalBytes, cudaMemcpyDeviceToDevice, s0));
+    for (int p = 1; p < ndev; p++) {
+        void* dst_on_p = comm->ipc.mapped[0][p];
+        CUDACHECK(cudaSetDevice(comm->devs[p]));
+        cudaStream_t sp = comm->ipc.streams[p];
+        CUDACHECK(cudaMemcpyAsync(recvbufs[p], dst_on_p, totalBytes, cudaMemcpyDeviceToDevice, sp));
+    }
+    for (int g = 0; g < ndev; g++)
+        CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[g]));
 
     cudaSetDevice(savedDev);
     return infcclSuccess;
@@ -36,20 +48,17 @@ infcclResult_t infcclAllGather(void** sendbufs, void** recvbufs,
     int sendcount, infcclDataType_t datatype,
     infcclComm_t comm, cudaStream_t stream) {
     if (sendcount == 0) return infcclSuccess;
-
     infcclResult_t r = infcclEnqueueCheck(comm, stream);
     if (r != infcclSuccess) return r;
-
     switch (datatype) {
-        case infcclChar:   r = stagedAllGatherImpl<char>(sendbufs, recvbufs, sendcount, comm, stream); break;
-        case infcclInt:    r = stagedAllGatherImpl<int>(sendbufs, recvbufs, sendcount, comm, stream); break;
-        case infcclHalf:   r = stagedAllGatherImpl<half>(sendbufs, recvbufs, sendcount, comm, stream); break;
-        case infcclFloat:  r = stagedAllGatherImpl<float>(sendbufs, recvbufs, sendcount, comm, stream); break;
-        case infcclInt64:  r = stagedAllGatherImpl<long long>(sendbufs, recvbufs, sendcount, comm, stream); break;
-        case infcclUint64: r = stagedAllGatherImpl<unsigned long long>(sendbufs, recvbufs, sendcount, comm, stream); break;
+        case infcclChar:   r = ipcAllGather<char>(sendbufs, recvbufs, sendcount, comm, stream); break;
+        case infcclInt:    r = ipcAllGather<int>(sendbufs, recvbufs, sendcount, comm, stream); break;
+        case infcclHalf:   r = ipcAllGather<half>(sendbufs, recvbufs, sendcount, comm, stream); break;
+        case infcclFloat:  r = ipcAllGather<float>(sendbufs, recvbufs, sendcount, comm, stream); break;
+        case infcclInt64:  r = ipcAllGather<long long>(sendbufs, recvbufs, sendcount, comm, stream); break;
+        case infcclUint64: r = ipcAllGather<unsigned long long>(sendbufs, recvbufs, sendcount, comm, stream); break;
         default: return infcclInvalidType;
     }
-
     if (r == infcclSuccess) infcclEnqueueRecord(comm, stream);
     return r;
 }

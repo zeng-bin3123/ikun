@@ -4,34 +4,36 @@
 #include <cuda_fp16.h>
 
 template<typename T, class FUNC>
-static infcclResult_t stagedReduceChunked(void** buffs, int count, int root,
-    infcclComm_t comm, cudaStream_t stream) {
-    int dev0 = comm->devs[0];
-    size_t elemSize = sizeof(T);
+static infcclResult_t ipcReduce(void** buffs, int count, int root, infcclComm_t comm, cudaStream_t stream) {
+    int ndev = comm->nDev;
+    size_t bytes = count * sizeof(T);
     int savedDev; cudaGetDevice(&savedDev);
-    CUDACHECK(cudaSetDevice(dev0));
+    int dev0 = comm->devs[0];
 
-    int chunkMax = INFCCL_CHUNK_ELEMS;
-    infcclResult_t r = infcclEnsureStaged(comm, (size_t)chunkMax * elemSize);
+    infcclResult_t r = infcclIpcExchangeBuffers(comm, buffs, bytes);
     if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-    for (int off = 0; off < count; off += chunkMax) {
-        int cnt = (off + chunkMax > count) ? (count - off) : chunkMax;
-        size_t bytes = cnt * elemSize;
-        char* buf0Ptr = (char*)buffs[0] + off * elemSize;
+    CUDACHECK(cudaSetDevice(dev0));
+    r = infcclEnsureStaged(comm, bytes);
+    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-        for (int p = 1; p < comm->nDev; p++) {
-            char* peerPtr = (char*)buffs[p] + off * elemSize;
-            CUDACHECK(cudaMemcpyPeer(comm->staged, dev0, peerPtr, comm->devs[p], bytes));
-            ReduceInplaceKernel<INFCCL_UNROLL, INFCCL_THREADS, FUNC, T>
-                <<<1, INFCCL_THREADS, 0, stream>>>((volatile T*)buf0Ptr, (const volatile T*)comm->staged, cnt);
-            CUDACHECK(cudaStreamSynchronize(stream));
-        }
+    cudaStream_t s = comm->ipc.streams[0];
 
-        if (root != 0) {
-            char* rootPtr = (char*)buffs[root] + off * elemSize;
-            CUDACHECK(cudaMemcpyPeer(rootPtr, comm->devs[root], buf0Ptr, dev0, bytes));
-        }
+    for (int p = 1; p < ndev; p++) {
+        void* src_on_0 = comm->ipc.mapped[p][0];
+        CUDACHECK(cudaMemcpyAsync(comm->staged, src_on_0, bytes, cudaMemcpyDeviceToDevice, s));
+        CUDACHECK(cudaStreamSynchronize(s));
+        ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(count), INFCCL_THREADS, 0, s>>>(
+            (T*)buffs[0], (const T*)comm->staged, count);
+        CUDACHECK(cudaStreamSynchronize(s));
+    }
+
+    if (root != 0) {
+        void* dst_on_root = comm->ipc.mapped[0][root];
+        CUDACHECK(cudaSetDevice(comm->devs[root]));
+        cudaStream_t sr = comm->ipc.streams[root];
+        CUDACHECK(cudaMemcpyAsync(buffs[root], dst_on_root, bytes, cudaMemcpyDeviceToDevice, sr));
+        CUDACHECK(cudaStreamSynchronize(sr));
     }
 
     cudaSetDevice(savedDev);
@@ -42,10 +44,10 @@ template<typename T>
 static infcclResult_t reduceWithType(void** buffs, int count,
     infcclRedOp_t op, int root, infcclComm_t comm, cudaStream_t stream) {
     switch (op) {
-        case infcclSum:  return stagedReduceChunked<T, FuncSum<T>>(buffs, count, root, comm, stream);
-        case infcclProd: return stagedReduceChunked<T, FuncProd<T>>(buffs, count, root, comm, stream);
-        case infcclMax:  return stagedReduceChunked<T, FuncMax<T>>(buffs, count, root, comm, stream);
-        case infcclMin:  return stagedReduceChunked<T, FuncMin<T>>(buffs, count, root, comm, stream);
+        case infcclSum:  return ipcReduce<T, FuncSum<T>>(buffs, count, root, comm, stream);
+        case infcclProd: return ipcReduce<T, FuncProd<T>>(buffs, count, root, comm, stream);
+        case infcclMax:  return ipcReduce<T, FuncMax<T>>(buffs, count, root, comm, stream);
+        case infcclMin:  return ipcReduce<T, FuncMin<T>>(buffs, count, root, comm, stream);
         default: return infcclInvalidOperation;
     }
 }
@@ -54,10 +56,8 @@ infcclResult_t infcclReduce(void** buffs, int count,
     infcclDataType_t datatype, infcclRedOp_t op, int root,
     infcclComm_t comm, cudaStream_t stream) {
     if (root < 0 || root >= comm->nDev) return infcclInvalidRank;
-
     infcclResult_t r = infcclEnqueueCheck(comm, stream);
     if (r != infcclSuccess) return r;
-
     switch (datatype) {
         case infcclChar:   r = reduceWithType<char>(buffs, count, op, root, comm, stream); break;
         case infcclInt:    r = reduceWithType<int>(buffs, count, op, root, comm, stream); break;
@@ -67,7 +67,6 @@ infcclResult_t infcclReduce(void** buffs, int count,
         case infcclUint64: r = reduceWithType<unsigned long long>(buffs, count, op, root, comm, stream); break;
         default: return infcclInvalidType;
     }
-
     if (r == infcclSuccess) infcclEnqueueRecord(comm, stream);
     return r;
 }

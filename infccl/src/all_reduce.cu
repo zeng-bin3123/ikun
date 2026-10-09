@@ -4,174 +4,117 @@
 #include "enqueue.h"
 #include <cuda_fp16.h>
 
-#define NUM_SUBCHUNKS 2
-
-template<typename T>
-struct AllReduceArgs {
-    void** buffs;
-    int N;
-    int nDev;
-    int* devs;
-
-    void* recvBuf[INFCCL_MAX_DEVS];
-    size_t recvBufBytes;
-
-    int sliceSize;
-    int chunkSize;
-    int numChunks;
-};
-
-template<typename T>
-static infcclResult_t setupArgs(AllReduceArgs<T>& args, void** buffs, int count,
-    infcclComm_t comm) {
-    args.buffs = buffs;
-    args.N = count;
-    args.nDev = comm->nDev;
-    args.devs = comm->devs;
-
-    int bufferNPerSlice = INFCCL_CHUNK_ELEMS / (NUM_SUBCHUNKS * args.nDev);
-    int unrollSize = INFCCL_THREADS * INFCCL_UNROLL;
-    args.sliceSize = (bufferNPerSlice / unrollSize) * unrollSize;
-    if (args.sliceSize < unrollSize) args.sliceSize = unrollSize;
-
-    int subchunkSize = args.nDev * args.sliceSize;
-    args.chunkSize = NUM_SUBCHUNKS * subchunkSize;
-
-    int remainder = args.N % args.chunkSize;
-    if ((args.N > args.chunkSize) && (remainder > 0) &&
-        (args.N < 5 * args.chunkSize) && (2 * remainder < args.chunkSize)) {
-        args.sliceSize /= 2;
-        subchunkSize = args.nDev * args.sliceSize;
-        args.chunkSize = NUM_SUBCHUNKS * subchunkSize;
-        args.numChunks = (args.N + args.chunkSize - 1) / args.chunkSize;
-    } else {
-        args.numChunks = (args.N + args.chunkSize - 1) / args.chunkSize;
-    }
-
-    size_t recvBytes = (size_t)args.sliceSize * NUM_SUBCHUNKS * sizeof(T);
-    args.recvBufBytes = recvBytes;
-
-    int savedDev; cudaGetDevice(&savedDev);
-    for (int g = 0; g < args.nDev; g++) {
-        CUDACHECK(cudaSetDevice(args.devs[g]));
-        CUDACHECK(cudaMalloc(&args.recvBuf[g], recvBytes));
-    }
-    cudaSetDevice(savedDev);
-    return infcclSuccess;
-}
-
-template<typename T>
-static void cleanupArgs(AllReduceArgs<T>& args) {
-    int savedDev; cudaGetDevice(&savedDev);
-    for (int g = 0; g < args.nDev; g++) {
-        cudaSetDevice(args.devs[g]);
-        if (args.recvBuf[g]) cudaFree(args.recvBuf[g]);
-        args.recvBuf[g] = NULL;
-    }
-    cudaSetDevice(savedDev);
-}
-
-static inline void getSliceSizeAndOffset(int* size, int* offset, int slice,
-    int numSlices, int sliceSize, int N, int chunkOffset) {
-    *offset = slice * sliceSize;
-    int remaining = N - chunkOffset - *offset;
-    *size = (remaining < sliceSize) ? remaining : sliceSize;
-    if (*size < 0) *size = 0;
-}
-
 template<typename T, class FUNC>
-static infcclResult_t ringAllReduce(AllReduceArgs<T>& args, cudaStream_t stream) {
-    int nDev = args.nDev;
-    size_t elemSize = sizeof(T);
-
-    for (int chunk = 0; chunk < args.numChunks; chunk++) {
-        int chunkOffset = chunk * args.chunkSize;
-        int chunkRemaining = args.N - chunkOffset;
-        int thisChunkSize = (chunkRemaining < args.chunkSize) ? chunkRemaining : args.chunkSize;
-        int numSlices = nDev;
-        int sliceN = (thisChunkSize + numSlices - 1) / numSlices;
-
-        for (int step = 0; step < nDev - 1; step++) {
-            for (int g = 0; g < nDev; g++) {
-                int sendSlice = (g - step + nDev) % nDev;
-                int next = (g + 1) % nDev;
-
-                int offset, size;
-                getSliceSizeAndOffset(&size, &offset, sendSlice, numSlices, sliceN, args.N, chunkOffset);
-                if (size <= 0) continue;
-
-                size_t bytes = size * elemSize;
-                char* sendPtr = (char*)args.buffs[g] + (chunkOffset + offset) * elemSize;
-
-                CUDACHECK(cudaMemcpyPeer(args.recvBuf[next], args.devs[next],
-                    sendPtr, args.devs[g], bytes));
-            }
-
-            for (int g = 0; g < nDev; g++) {
-                int recvSlice = (g - step - 1 + nDev) % nDev;
-                int offset, size;
-                getSliceSizeAndOffset(&size, &offset, recvSlice, numSlices, sliceN, args.N, chunkOffset);
-                if (size <= 0) continue;
-
-                CUDACHECK(cudaSetDevice(args.devs[g]));
-                T* dst = (T*)((char*)args.buffs[g] + (chunkOffset + offset) * elemSize);
-                T* src = (T*)args.recvBuf[g];
-                ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(size), INFCCL_THREADS, 0, stream>>>(
-                    dst, src, size);
-                CUDACHECK(cudaStreamSynchronize(stream));
-            }
-        }
-
-        for (int step = 0; step < nDev - 1; step++) {
-            for (int g = 0; g < nDev; g++) {
-                int sendSlice = (g - step + 1 + nDev) % nDev;
-                int next = (g + 1) % nDev;
-
-                int offset, size;
-                getSliceSizeAndOffset(&size, &offset, sendSlice, numSlices, sliceN, args.N, chunkOffset);
-                if (size <= 0) continue;
-
-                size_t bytes = size * elemSize;
-                char* sendPtr = (char*)args.buffs[g] + (chunkOffset + offset) * elemSize;
-
-                CUDACHECK(cudaMemcpyPeer(
-                    (char*)args.buffs[next] + (chunkOffset + offset) * elemSize,
-                    args.devs[next], sendPtr, args.devs[g], bytes));
-            }
-        }
-    }
-
-    return infcclSuccess;
-}
-
-template<typename T, class FUNC>
-static infcclResult_t stagedAllReduce(void** buffs, int count, infcclComm_t comm, cudaStream_t stream) {
+static infcclResult_t ipcAllReduce(void** buffs, int count, infcclComm_t comm, cudaStream_t stream) {
+    int ndev = comm->nDev;
+    size_t bytes = count * sizeof(T);
     int savedDev; cudaGetDevice(&savedDev);
-    int rootDev = comm->devs[0];
-    CUDACHECK(cudaSetDevice(rootDev));
 
-    size_t chunkBytes = (size_t)INFCCL_CHUNK_ELEMS * sizeof(T);
-    infcclResult_t r = infcclEnsureStaged(comm, chunkBytes);
+    infcclResult_t r = infcclIpcExchangeBuffers(comm, buffs, bytes);
     if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-    int chunkMax = INFCCL_CHUNK_ELEMS;
-    for (int off = 0; off < count; off += chunkMax) {
-        int cnt = (off + chunkMax > count) ? (count - off) : chunkMax;
-        size_t bytes = cnt * sizeof(T);
-        char* rootPtr = (char*)buffs[0] + off * sizeof(T);
+    CUDACHECK(cudaSetDevice(comm->devs[0]));
+    r = infcclEnsureStaged(comm, bytes);
+    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-        for (int p = 1; p < comm->nDev; p++) {
-            char* peerPtr = (char*)buffs[p] + off * sizeof(T);
-            CUDACHECK(cudaMemcpyPeer(comm->staged, rootDev, peerPtr, comm->devs[p], bytes));
-            ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(cnt), INFCCL_THREADS, 0, stream>>>(
-                (T*)rootPtr, (const T*)comm->staged, cnt);
-            CUDACHECK(cudaStreamSynchronize(stream));
+    for (int p = 1; p < ndev; p++) {
+        void* src_on_0 = comm->ipc.mapped[p][0];
+        cudaStream_t s = comm->ipc.streams[0];
+        CUDACHECK(cudaMemcpyAsync(comm->staged, src_on_0, bytes, cudaMemcpyDeviceToDevice, s));
+        CUDACHECK(cudaStreamSynchronize(s));
+        ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(count), INFCCL_THREADS, 0, s>>>(
+            (T*)buffs[0], (const T*)comm->staged, count);
+        CUDACHECK(cudaStreamSynchronize(s));
+    }
+
+    for (int p = 1; p < ndev; p++) {
+        void* dst_on_p = comm->ipc.mapped[0][p];
+        CUDACHECK(cudaSetDevice(comm->devs[p]));
+        cudaStream_t s = comm->ipc.streams[p];
+        CUDACHECK(cudaMemcpyAsync(buffs[p], dst_on_p, bytes, cudaMemcpyDeviceToDevice, s));
+    }
+    for (int p = 1; p < ndev; p++) {
+        CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[p]));
+    }
+
+    cudaSetDevice(savedDev);
+    return infcclSuccess;
+}
+
+template<typename T, class FUNC>
+static infcclResult_t ipcRingAllReduce(void** buffs, int count, infcclComm_t comm, cudaStream_t stream) {
+    int ndev = comm->nDev;
+    size_t elemSize = sizeof(T);
+    int savedDev; cudaGetDevice(&savedDev);
+
+    infcclResult_t r = infcclIpcExchangeBuffers(comm, buffs, count * elemSize);
+    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
+
+    size_t sliceBytes = ((count + ndev - 1) / ndev) * elemSize;
+    for (int g = 0; g < ndev; g++) {
+        CUDACHECK(cudaSetDevice(comm->devs[g]));
+        r = infcclEnsureStaged(comm, sliceBytes);
+    }
+    CUDACHECK(cudaSetDevice(comm->devs[0]));
+    r = infcclEnsureStaged(comm, sliceBytes);
+    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
+
+    int sliceN = (count + ndev - 1) / ndev;
+
+    for (int step = 0; step < ndev - 1; step++) {
+        for (int g = 0; g < ndev; g++) {
+            int sendSlice = (g - step + ndev) % ndev;
+            int next = (g + 1) % ndev;
+            int off = sendSlice * sliceN;
+            int cnt = (off + sliceN > count) ? (count - off) : sliceN;
+            if (cnt <= 0) continue;
+
+            void* src_on_next = comm->ipc.mapped[g][next];
+            CUDACHECK(cudaSetDevice(comm->devs[next]));
+            cudaStream_t s = comm->ipc.streams[next];
+            CUDACHECK(cudaMemcpyAsync(
+                (char*)buffs[next] + count * elemSize,
+                (char*)src_on_next + off * elemSize,
+                cnt * elemSize, cudaMemcpyDeviceToDevice, s));
         }
 
-        for (int p = 1; p < comm->nDev; p++) {
-            char* peerPtr = (char*)buffs[p] + off * sizeof(T);
-            CUDACHECK(cudaMemcpyPeer(peerPtr, comm->devs[p], rootPtr, rootDev, bytes));
+        for (int g = 0; g < ndev; g++)
+            CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[g]));
+
+        for (int g = 0; g < ndev; g++) {
+            int recvSlice = (g - step - 1 + ndev) % ndev;
+            int off = recvSlice * sliceN;
+            int cnt = (off + sliceN > count) ? (count - off) : sliceN;
+            if (cnt <= 0) continue;
+
+            CUDACHECK(cudaSetDevice(comm->devs[g]));
+            cudaStream_t s = comm->ipc.streams[g];
+            T* dst = (T*)((char*)buffs[g] + off * elemSize);
+            T* src = (T*)((char*)buffs[g] + count * elemSize);
+            ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(cnt), INFCCL_THREADS, 0, s>>>(dst, src, cnt);
         }
+        for (int g = 0; g < ndev; g++)
+            CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[g]));
+    }
+
+    for (int step = 0; step < ndev - 1; step++) {
+        for (int g = 0; g < ndev; g++) {
+            int sendSlice = (g - step + 1 + ndev) % ndev;
+            int next = (g + 1) % ndev;
+            int off = sendSlice * sliceN;
+            int cnt = (off + sliceN > count) ? (count - off) : sliceN;
+            if (cnt <= 0) continue;
+
+            void* src_on_next = comm->ipc.mapped[g][next];
+            CUDACHECK(cudaSetDevice(comm->devs[next]));
+            cudaStream_t s = comm->ipc.streams[next];
+            CUDACHECK(cudaMemcpyAsync(
+                (char*)buffs[next] + off * elemSize,
+                (char*)src_on_next + off * elemSize,
+                cnt * elemSize, cudaMemcpyDeviceToDevice, s));
+        }
+        for (int g = 0; g < ndev; g++)
+            CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[g]));
     }
 
     cudaSetDevice(savedDev);
@@ -182,25 +125,7 @@ template<class FUNC, typename T>
 static infcclResult_t allReduceDispatch(void** buffs, int count,
     infcclComm_t comm, cudaStream_t stream) {
     if (count == 0) return infcclSuccess;
-
-    int crossover = comm->nDev * 1048576;
-
-    int savedDev; cudaGetDevice(&savedDev);
-
-    if (count > crossover && comm->nDev > 1) {
-        AllReduceArgs<T> args;
-        memset(&args, 0, sizeof(args));
-        infcclResult_t r = setupArgs<T>(args, buffs, count, comm);
-        if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
-        r = ringAllReduce<T, FUNC>(args, stream);
-        cleanupArgs(args);
-        cudaSetDevice(savedDev);
-        return r;
-    }
-
-    infcclResult_t r = stagedAllReduce<T, FUNC>(buffs, count, comm, stream);
-    cudaSetDevice(savedDev);
-    return r;
+    return ipcAllReduce<T, FUNC>(buffs, count, comm, stream);
 }
 
 template<typename T>
@@ -231,7 +156,6 @@ infcclResult_t infcclAllReduce(void** buffs, int count,
         default: return infcclInvalidType;
     }
 
-    if (r == infcclSuccess)
-        infcclEnqueueRecord(comm, stream);
+    if (r == infcclSuccess) infcclEnqueueRecord(comm, stream);
     return r;
 }

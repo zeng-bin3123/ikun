@@ -54,6 +54,13 @@ typedef struct {
     int back;
 } InfcclEventQueue;
 
+struct infcclIpcConn {
+    void* base[INFCCL_MAX_DEVS];
+    size_t baseBytes[INFCCL_MAX_DEVS];
+    void* mapped[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
+    cudaStream_t streams[INFCCL_MAX_DEVS];
+};
+
 struct infcclComm {
     int nDev;
     int rank;
@@ -71,9 +78,15 @@ struct infcclComm {
     void* staged;
     size_t stagedBytes;
 
+    infcclIpcConn ipc;
+
     InfcclEventQueue events;
     size_t buffSize;
 };
+
+infcclResult_t infcclIpcRegister(infcclComm_t comm, int gpu, void* ptr, size_t bytes);
+void* infcclIpcGetMapped(infcclComm_t comm, int fromGpu, int onGpu);
+cudaStream_t infcclGetStream(infcclComm_t comm, int gpu);
 
 static inline size_t infcclTypeSize(infcclDataType_t type) {
     switch(type) {

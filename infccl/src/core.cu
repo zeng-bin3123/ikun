@@ -174,6 +174,7 @@ static infcclResult_t commInitEvents(infcclComm_t comm) {
 
 static void commFree(infcclComm_t comm) {
     if (!comm) return;
+    infcclIpcCleanup(comm);
     int savedDev; cudaGetDevice(&savedDev);
     cudaSetDevice(comm->cudaDev);
     if (comm->staged) cudaFree(comm->staged);
@@ -230,7 +231,12 @@ infcclResult_t infcclCommInitAll(infcclComm_t* comms, int ndev, const int* devli
         comms[r]->transportPath = comms[0]->transportPath;
     }
 
-    INFO("init %d devs, transport=%s", ndev, comms[0]->p2pDirectWorks ? "P2P" : "STAGED");
+    for (int r = 0; r < ndev; r++) {
+        res = infcclIpcSetup(comms[r]);
+        if (res != infcclSuccess) goto fail;
+    }
+
+    INFO("init %d devs, transport=%s, IPC streams ready", ndev, comms[0]->p2pDirectWorks ? "P2P" : "STAGED");
     cudaSetDevice(savedDev);
     return infcclSuccess;
 
@@ -248,3 +254,77 @@ infcclResult_t infcclCommDestroy(infcclComm_t comm) {
 infcclResult_t infcclCommCount(const infcclComm_t comm, int* count) { *count = comm->nDev; return infcclSuccess; }
 infcclResult_t infcclCommCuDevice(const infcclComm_t comm, int* device) { *device = comm->cudaDev; return infcclSuccess; }
 infcclResult_t infcclCommUserRank(const infcclComm_t comm, int* rank) { *rank = comm->rank; return infcclSuccess; }
+
+infcclResult_t infcclIpcSetup(infcclComm_t comm) {
+    int savedDev; cudaGetDevice(&savedDev);
+    memset(&comm->ipc, 0, sizeof(infcclIpcConn));
+
+    for (int g = 0; g < comm->nDev; g++) {
+        CUDACHECK(cudaSetDevice(comm->devs[g]));
+        CUDACHECK(cudaStreamCreateWithFlags(&comm->ipc.streams[g], cudaStreamNonBlocking));
+    }
+
+    cudaSetDevice(savedDev);
+    return infcclSuccess;
+}
+
+void infcclIpcCleanup(infcclComm_t comm) {
+    int savedDev; cudaGetDevice(&savedDev);
+    for (int i = 0; i < comm->nDev; i++) {
+        for (int j = 0; j < comm->nDev; j++) {
+            if (i != j && comm->ipc.mapped[i][j]) {
+                cudaSetDevice(comm->devs[j]);
+                cudaIpcCloseMemHandle(comm->ipc.mapped[i][j]);
+                comm->ipc.mapped[i][j] = NULL;
+            }
+        }
+    }
+    for (int g = 0; g < comm->nDev; g++) {
+        if (comm->ipc.streams[g]) {
+            cudaSetDevice(comm->devs[g]);
+            cudaStreamDestroy(comm->ipc.streams[g]);
+            comm->ipc.streams[g] = NULL;
+        }
+        if (comm->ipc.base[g]) {
+            cudaSetDevice(comm->devs[g]);
+            cudaFree(comm->ipc.base[g]);
+            comm->ipc.base[g] = NULL;
+        }
+    }
+    cudaSetDevice(savedDev);
+}
+
+infcclResult_t infcclIpcExchangeBuffers(infcclComm_t comm, void** buffs, size_t bytes) {
+    int savedDev; cudaGetDevice(&savedDev);
+
+    for (int i = 0; i < comm->nDev; i++) {
+        for (int j = 0; j < comm->nDev; j++) {
+            if (i != j && comm->ipc.mapped[i][j]) {
+                cudaSetDevice(comm->devs[j]);
+                cudaIpcCloseMemHandle(comm->ipc.mapped[i][j]);
+                comm->ipc.mapped[i][j] = NULL;
+            }
+        }
+    }
+
+    for (int g = 0; g < comm->nDev; g++) {
+        cudaIpcMemHandle_t handle;
+        CUDACHECK(cudaSetDevice(comm->devs[g]));
+        CUDACHECK(cudaIpcGetMemHandle(&handle, buffs[g]));
+
+        for (int other = 0; other < comm->nDev; other++) {
+            if (other == g) continue;
+            CUDACHECK(cudaSetDevice(comm->devs[other]));
+            void* mapped = NULL;
+            CUDACHECK(cudaIpcOpenMemHandle(&mapped, handle, cudaIpcMemLazyEnablePeerAccess));
+            comm->ipc.mapped[g][other] = mapped;
+        }
+    }
+
+    cudaSetDevice(savedDev);
+    return infcclSuccess;
+}
+
+cudaStream_t infcclGetStream(infcclComm_t comm, int gpu) {
+    return comm->ipc.streams[gpu];
+}

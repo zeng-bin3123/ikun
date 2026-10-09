@@ -1,26 +1,29 @@
 #include "core.h"
-#include "copy_kernel.h"
 #include "enqueue.h"
 #include <cuda_fp16.h>
 
 template<typename T>
-static infcclResult_t stagedBcastChunked(void** buffs, int count, int root,
-    infcclComm_t comm, cudaStream_t stream) {
-    size_t elemSize = sizeof(T);
-    int rootDev = comm->devs[root];
-    int chunkMax = INFCCL_CHUNK_ELEMS;
+static infcclResult_t ipcBcast(void** buffs, int count, int root, infcclComm_t comm, cudaStream_t stream) {
+    int ndev = comm->nDev;
+    size_t bytes = count * sizeof(T);
+    int savedDev; cudaGetDevice(&savedDev);
 
-    for (int off = 0; off < count; off += chunkMax) {
-        int cnt = (off + chunkMax > count) ? (count - off) : chunkMax;
-        size_t bytes = cnt * elemSize;
-        char* rootPtr = (char*)buffs[root] + off * elemSize;
+    infcclResult_t r = infcclIpcExchangeBuffers(comm, buffs, bytes);
+    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
-        for (int p = 0; p < comm->nDev; p++) {
-            if (p == root) continue;
-            char* peerPtr = (char*)buffs[p] + off * elemSize;
-            CUDACHECK(cudaMemcpyPeer(peerPtr, comm->devs[p], rootPtr, rootDev, bytes));
-        }
+    for (int p = 0; p < ndev; p++) {
+        if (p == root) continue;
+        void* src_on_p = comm->ipc.mapped[root][p];
+        CUDACHECK(cudaSetDevice(comm->devs[p]));
+        cudaStream_t s = comm->ipc.streams[p];
+        CUDACHECK(cudaMemcpyAsync(buffs[p], src_on_p, bytes, cudaMemcpyDeviceToDevice, s));
     }
+    for (int p = 0; p < ndev; p++) {
+        if (p == root) continue;
+        CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[p]));
+    }
+
+    cudaSetDevice(savedDev);
     return infcclSuccess;
 }
 
@@ -29,20 +32,17 @@ infcclResult_t infcclBcast(void** buffs, int count,
     infcclComm_t comm, cudaStream_t stream) {
     if (root < 0 || root >= comm->nDev) return infcclInvalidRank;
     if (count == 0) return infcclSuccess;
-
     infcclResult_t r = infcclEnqueueCheck(comm, stream);
     if (r != infcclSuccess) return r;
-
     switch (datatype) {
-        case infcclChar:   r = stagedBcastChunked<char>(buffs, count, root, comm, stream); break;
-        case infcclInt:    r = stagedBcastChunked<int>(buffs, count, root, comm, stream); break;
-        case infcclHalf:   r = stagedBcastChunked<half>(buffs, count, root, comm, stream); break;
-        case infcclFloat:  r = stagedBcastChunked<float>(buffs, count, root, comm, stream); break;
-        case infcclInt64:  r = stagedBcastChunked<long long>(buffs, count, root, comm, stream); break;
-        case infcclUint64: r = stagedBcastChunked<unsigned long long>(buffs, count, root, comm, stream); break;
+        case infcclChar:   r = ipcBcast<char>(buffs, count, root, comm, stream); break;
+        case infcclInt:    r = ipcBcast<int>(buffs, count, root, comm, stream); break;
+        case infcclHalf:   r = ipcBcast<half>(buffs, count, root, comm, stream); break;
+        case infcclFloat:  r = ipcBcast<float>(buffs, count, root, comm, stream); break;
+        case infcclInt64:  r = ipcBcast<long long>(buffs, count, root, comm, stream); break;
+        case infcclUint64: r = ipcBcast<unsigned long long>(buffs, count, root, comm, stream); break;
         default: return infcclInvalidType;
     }
-
     if (r == infcclSuccess) infcclEnqueueRecord(comm, stream);
     return r;
 }
