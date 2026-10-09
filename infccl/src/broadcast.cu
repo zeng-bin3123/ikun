@@ -1,60 +1,48 @@
 #include "core.h"
-#include <cuda_fp16.h>
+#include "copy_kernel.h"
 #include "enqueue.h"
+#include <cuda_fp16.h>
 
 template<typename T>
-struct BroadcastArgs {
-    void** buffs;
-    int N;
-    int nDev;
-    int root;
-    int rootDev;
-    int* devs;
-    int chunkElems;
-};
-
-template<typename T>
-static infcclResult_t stagedBroadcastChunked(BroadcastArgs<T> args, cudaStream_t stream) {
-    int rootDev = args.rootDev;
-    int root = args.root;
+static infcclResult_t stagedBcastChunked(void** buffs, int count, int root,
+    infcclComm_t comm, cudaStream_t stream) {
     size_t elemSize = sizeof(T);
+    int rootDev = comm->devs[root];
+    int chunkMax = INFCCL_CHUNK_ELEMS;
 
-    for (int off = 0; off < args.N; off += args.chunkElems) {
-        int cnt = (off + args.chunkElems > args.N) ? (args.N - off) : args.chunkElems;
+    for (int off = 0; off < count; off += chunkMax) {
+        int cnt = (off + chunkMax > count) ? (count - off) : chunkMax;
         size_t bytes = cnt * elemSize;
-        char* rootPtr = (char*)args.buffs[root] + off * elemSize;
+        char* rootPtr = (char*)buffs[root] + off * elemSize;
 
-        for (int p = 0; p < args.nDev; p++) {
+        for (int p = 0; p < comm->nDev; p++) {
             if (p == root) continue;
-            char* peerPtr = (char*)args.buffs[p] + off * elemSize;
-            CUDACHECK(cudaMemcpyPeer(peerPtr, args.devs[p], rootPtr, rootDev, bytes));
+            char* peerPtr = (char*)buffs[p] + off * elemSize;
+            CUDACHECK(cudaMemcpyPeer(peerPtr, comm->devs[p], rootPtr, rootDev, bytes));
         }
     }
     return infcclSuccess;
-}
-
-template<typename T>
-static infcclResult_t bcastWithType(void** buffs, int count, int root,
-    infcclComm_t comm, cudaStream_t stream) {
-    if (count == 0) return infcclSuccess;
-    BroadcastArgs<T> args;
-    args.buffs = buffs; args.N = count; args.nDev = comm->nDev;
-    args.root = root; args.rootDev = comm->devs[root];
-    args.devs = comm->devs; args.chunkElems = INFCCL_CHUNK_ELEMS;
-    return stagedBroadcastChunked<T>(args, stream);
 }
 
 infcclResult_t infcclBcast(void** buffs, int count,
     infcclDataType_t datatype, int root,
     infcclComm_t comm, cudaStream_t stream) {
     if (root < 0 || root >= comm->nDev) return infcclInvalidRank;
+    if (count == 0) return infcclSuccess;
+
+    infcclResult_t r = infcclEnqueueCheck(comm, stream);
+    if (r != infcclSuccess) return r;
+
     switch (datatype) {
-        case infcclChar:   return bcastWithType<char>(buffs, count, root, comm, stream);
-        case infcclInt:    return bcastWithType<int>(buffs, count, root, comm, stream);
-        case infcclHalf:   return bcastWithType<half>(buffs, count, root, comm, stream);
-        case infcclFloat:  return bcastWithType<float>(buffs, count, root, comm, stream);
-        case infcclInt64:  return bcastWithType<long long>(buffs, count, root, comm, stream);
-        case infcclUint64: return bcastWithType<unsigned long long>(buffs, count, root, comm, stream);
+        case infcclChar:   r = stagedBcastChunked<char>(buffs, count, root, comm, stream); break;
+        case infcclInt:    r = stagedBcastChunked<int>(buffs, count, root, comm, stream); break;
+        case infcclHalf:   r = stagedBcastChunked<half>(buffs, count, root, comm, stream); break;
+        case infcclFloat:  r = stagedBcastChunked<float>(buffs, count, root, comm, stream); break;
+        case infcclInt64:  r = stagedBcastChunked<long long>(buffs, count, root, comm, stream); break;
+        case infcclUint64: r = stagedBcastChunked<unsigned long long>(buffs, count, root, comm, stream); break;
         default: return infcclInvalidType;
     }
+
+    if (r == infcclSuccess) infcclEnqueueRecord(comm, stream);
+    return r;
 }
