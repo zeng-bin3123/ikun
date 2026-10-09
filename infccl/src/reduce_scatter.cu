@@ -21,7 +21,7 @@ static infcclResult_t stagedReduceScatter(ReduceScatterArgs<T> args, cudaStream_
     size_t totalBytes = ndev * chunkBytes;
     int totalCount = ndev * args.recvcount;
 
-    float* full = NULL;
+    T* full = NULL;
     CUDACHECK(cudaMalloc(&full, totalBytes));
     CUDACHECK(cudaMemcpy(full, args.sendbufs[0], totalBytes, cudaMemcpyDeviceToDevice));
 
