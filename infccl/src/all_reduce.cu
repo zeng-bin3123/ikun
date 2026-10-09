@@ -183,7 +183,7 @@ static infcclResult_t allReduceDispatch(void** buffs, int count,
     infcclComm_t comm, cudaStream_t stream) {
     if (count == 0) return infcclSuccess;
 
-    int crossover = comm->nDev * 4096;
+    int crossover = comm->nDev * 1048576;
 
     int savedDev; cudaGetDevice(&savedDev);
 
