@@ -1,3 +1,4 @@
+#include "../src/infccl.h"
 #include "../src/core.h"
 #include <cstdio>
 #include <cstdlib>
@@ -16,6 +17,7 @@ static infcclComm_t comms[INFCCL_MAX_DEVS];
 
 int vf(float* d,int n,float exp,int gpu){
     float*h=(float*)malloc(n*4);cudaSetDevice(gpu);cudaMemcpy(h,d,n*4,cudaMemcpyDeviceToHost);
+    int e=0;for(int i=0;i<n;i++)if(fabsf(h[i]-exp)>1e-3f){if(e<2)printf("    [%d]=%.4f want %.4f\n",i,h[i],exp);e++;}
     free(h);return e;
 }
 int vi(int* d,int n,int exp,int gpu){
@@ -23,11 +25,9 @@ int vi(int* d,int n,int exp,int gpu){
     int e=0;for(int i=0;i<n;i++)if(h[i]!=exp){if(e<2)printf("    [%d]=%d want %d\n",i,h[i],exp);e++;}
     free(h);return e;
 }
-    int e=0;for(int i=0;i<n;i++)if(fabs(h[i]-exp)>1e-6){if(e<2)printf("    [%d]=%.6f want %.6f\n",i,h[i],exp);e++;}
-    free(h);return e;
-}
 int vh(half* d,int n,float exp,int gpu){
     half*h=(half*)malloc(n*2);cudaSetDevice(gpu);cudaMemcpy(h,d,n*2,cudaMemcpyDeviceToHost);
+    int e=0;for(int i=0;i<n;i++)if(fabsf(__half2float(h[i])-exp)>0.2f){if(e<2)printf("    [%d]=%.2f want %.2f\n",i,__half2float(h[i]),exp);e++;}
     free(h);return e;
 }
 
@@ -71,7 +71,6 @@ int test_int() {
     for(int g=0;g<ngpu;g++){CUCHK(cudaSetDevice(g));cudaFree(bufs[g]);}
     return total;
 }
-
 
 int test_half() {
     printf("  [half]\n");
