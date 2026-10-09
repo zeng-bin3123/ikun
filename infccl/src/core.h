@@ -84,8 +84,7 @@ struct infcclComm {
     size_t buffSize;
 };
 
-infcclResult_t infcclIpcRegister(infcclComm_t comm, int gpu, void* ptr, size_t bytes);
-void* infcclIpcGetMapped(infcclComm_t comm, int fromGpu, int onGpu);
+infcclResult_t infcclIpcExchangeBuffers(infcclComm_t comm, void** buffs, size_t bytes);
 cudaStream_t infcclGetStream(infcclComm_t comm, int gpu);
 
 static inline size_t infcclTypeSize(infcclDataType_t type) {
