@@ -43,7 +43,7 @@ static infcclResult_t setupArgs(AllReduceArgs<T>& args, void** buffs, int count,
         args.sliceSize /= 2;
         subchunkSize = args.nDev * args.sliceSize;
         args.chunkSize = NUM_SUBCHUNKS * subchunkSize;
-        args.numChunks = args.N / args.chunkSize;
+        args.numChunks = (args.N + args.chunkSize - 1) / args.chunkSize;
     } else {
         args.numChunks = (args.N + args.chunkSize - 1) / args.chunkSize;
     }
