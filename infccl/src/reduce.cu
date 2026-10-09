@@ -8,7 +8,6 @@ struct ReduceArgs {
     int N;
     int nDev;
     int root;
-    int rootDev;
     int* devs;
     void* staged;
     int chunkElems;
@@ -16,22 +15,25 @@ struct ReduceArgs {
 
 template<typename T, class FUNC>
 static infcclResult_t stagedReduceChunked(ReduceArgs<T> args, cudaStream_t stream) {
-    int rootDev = args.rootDev;
-    int root = args.root;
+    int dev0 = args.devs[0];
     size_t elemSize = sizeof(T);
 
     for (int off = 0; off < args.N; off += args.chunkElems) {
         int cnt = (off + args.chunkElems > args.N) ? (args.N - off) : args.chunkElems;
         size_t bytes = cnt * elemSize;
-        char* rootPtr = (char*)args.buffs[root] + off * elemSize;
+        char* buf0Ptr = (char*)args.buffs[0] + off * elemSize;
 
-        for (int p = 0; p < args.nDev; p++) {
-            if (p == root) continue;
+        for (int p = 1; p < args.nDev; p++) {
             char* peerPtr = (char*)args.buffs[p] + off * elemSize;
-            CUDACHECK(cudaMemcpyPeer(args.staged, rootDev, peerPtr, args.devs[p], bytes));
+            CUDACHECK(cudaMemcpyPeer(args.staged, dev0, peerPtr, args.devs[p], bytes));
             ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(cnt), INFCCL_THREADS, 0, stream>>>(
-                (T*)rootPtr, (const T*)args.staged, cnt);
+                (T*)buf0Ptr, (const T*)args.staged, cnt);
             CUDACHECK(cudaStreamSynchronize(stream));
+        }
+
+        if (args.root != 0) {
+            char* rootPtr = (char*)args.buffs[args.root] + off * elemSize;
+            CUDACHECK(cudaMemcpyPeer(rootPtr, args.devs[args.root], buf0Ptr, dev0, bytes));
         }
     }
     return infcclSuccess;
@@ -42,8 +44,7 @@ static infcclResult_t reduceWithTypeAndFunc(void** buffs, int count, int root,
     infcclComm_t comm, cudaStream_t stream) {
     if (count == 0) return infcclSuccess;
     int savedDev; cudaGetDevice(&savedDev);
-    int rootDev = comm->devs[root];
-    CUDACHECK(cudaSetDevice(rootDev));
+    CUDACHECK(cudaSetDevice(comm->devs[0]));
 
     int chunkMax = INFCCL_CHUNK_ELEMS;
     infcclResult_t r = infcclEnsureStaged(comm, (size_t)chunkMax * sizeof(T));
@@ -51,9 +52,8 @@ static infcclResult_t reduceWithTypeAndFunc(void** buffs, int count, int root,
 
     ReduceArgs<T> args;
     args.buffs = buffs; args.N = count; args.nDev = comm->nDev;
-    args.root = root; args.rootDev = rootDev;
-    args.devs = comm->devs; args.staged = comm->staged;
-    args.chunkElems = chunkMax;
+    args.root = root; args.devs = comm->devs;
+    args.staged = comm->staged; args.chunkElems = chunkMax;
 
     r = stagedReduceChunked<T, FUNC>(args, stream);
     cudaSetDevice(savedDev);
