@@ -185,17 +185,22 @@ static infcclResult_t allReduceDispatch(void** buffs, int count,
 
     int crossover = comm->nDev * 4096;
 
+    int savedDev; cudaGetDevice(&savedDev);
+
     if (count > crossover && comm->nDev > 1) {
         AllReduceArgs<T> args;
         memset(&args, 0, sizeof(args));
         infcclResult_t r = setupArgs<T>(args, buffs, count, comm);
-        if (r != infcclSuccess) return r;
+        if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
         r = ringAllReduce<T, FUNC>(args, stream);
         cleanupArgs(args);
+        cudaSetDevice(savedDev);
         return r;
     }
 
-    return stagedAllReduce<T, FUNC>(buffs, count, comm, stream);
+    infcclResult_t r = stagedAllReduce<T, FUNC>(buffs, count, comm, stream);
+    cudaSetDevice(savedDev);
+    return r;
 }
 
 template<typename T>
