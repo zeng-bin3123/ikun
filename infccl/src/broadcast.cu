@@ -6,24 +6,17 @@ template<typename T>
 static infcclResult_t ipcBcast(void** buffs, int count, int root, infcclComm_t comm, cudaStream_t stream) {
     int ndev = comm->nDev;
     size_t bytes = count * sizeof(T);
-    int savedDev; cudaGetDevice(&savedDev);
-
-    infcclResult_t r = infcclIpcExchangeBuffers(comm, buffs, bytes);
-    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
+    int rootDev = comm->devs[root];
 
     for (int p = 0; p < ndev; p++) {
         if (p == root) continue;
-        void* src_on_p = comm->ipc.mapped[root][p];
-        CUDACHECK(cudaSetDevice(comm->devs[p]));
-        cudaStream_t s = comm->ipc.streams[p];
-        CUDACHECK(cudaMemcpyAsync(buffs[p], src_on_p, bytes, cudaMemcpyDeviceToDevice, s));
+        cudaStream_t sp = comm->ipc.streams[p];
+        CUDACHECK(cudaMemcpyPeerAsync((T*)buffs[p], comm->devs[p], (T*)buffs[root], rootDev, bytes, sp));
     }
     for (int p = 0; p < ndev; p++) {
         if (p == root) continue;
         CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[p]));
     }
-
-    cudaSetDevice(savedDev);
     return infcclSuccess;
 }
 

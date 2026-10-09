@@ -6,36 +6,27 @@ template<typename T>
 static infcclResult_t ipcAllGather(void** sendbufs, void** recvbufs,
     int sendcount, infcclComm_t comm, cudaStream_t stream) {
     int ndev = comm->nDev;
+    int dev0 = comm->devs[0];
     size_t chunkBytes = sendcount * sizeof(T);
     size_t totalBytes = ndev * chunkBytes;
     int savedDev; cudaGetDevice(&savedDev);
 
-    infcclResult_t r = infcclIpcExchangeBuffers(comm, sendbufs, chunkBytes);
-    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
-
-    CUDACHECK(cudaSetDevice(comm->devs[0]));
-    r = infcclEnsureStaged(comm, totalBytes);
+    CUDACHECK(cudaSetDevice(dev0));
+    infcclResult_t r = infcclEnsureStaged(comm, totalBytes);
     if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
     cudaStream_t s0 = comm->ipc.streams[0];
     CUDACHECK(cudaMemcpyAsync(comm->staged, sendbufs[0], chunkBytes, cudaMemcpyDeviceToDevice, s0));
     for (int g = 1; g < ndev; g++) {
-        void* src_on_0 = comm->ipc.mapped[g][0];
-        CUDACHECK(cudaMemcpyAsync((char*)comm->staged + g * chunkBytes, src_on_0,
-            chunkBytes, cudaMemcpyDeviceToDevice, s0));
+        CUDACHECK(cudaMemcpyPeerAsync((char*)comm->staged + g * chunkBytes, dev0,
+            sendbufs[g], comm->devs[g], chunkBytes, s0));
     }
     CUDACHECK(cudaStreamSynchronize(s0));
 
-    infcclResult_t r2 = infcclIpcExchangeBuffers(comm, recvbufs, totalBytes);
-    if (r2 != infcclSuccess) { cudaSetDevice(savedDev); return r2; }
-
-    CUDACHECK(cudaSetDevice(comm->devs[0]));
     CUDACHECK(cudaMemcpyAsync(recvbufs[0], comm->staged, totalBytes, cudaMemcpyDeviceToDevice, s0));
     for (int p = 1; p < ndev; p++) {
-        void* dst_on_p = comm->ipc.mapped[0][p];
-        CUDACHECK(cudaSetDevice(comm->devs[p]));
         cudaStream_t sp = comm->ipc.streams[p];
-        CUDACHECK(cudaMemcpyAsync(recvbufs[p], dst_on_p, totalBytes, cudaMemcpyDeviceToDevice, sp));
+        CUDACHECK(cudaMemcpyPeerAsync(recvbufs[p], comm->devs[p], comm->staged, dev0, totalBytes, sp));
     }
     for (int g = 0; g < ndev; g++)
         CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[g]));

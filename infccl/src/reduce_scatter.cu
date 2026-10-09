@@ -7,17 +7,14 @@ template<typename T, class FUNC>
 static infcclResult_t ipcReduceScatter(void** sendbufs, void** recvbufs,
     int recvcount, infcclComm_t comm, cudaStream_t stream) {
     int ndev = comm->nDev;
+    int dev0 = comm->devs[0];
     size_t chunkBytes = recvcount * sizeof(T);
     size_t totalBytes = ndev * chunkBytes;
     int totalCount = ndev * recvcount;
     int savedDev; cudaGetDevice(&savedDev);
-    int dev0 = comm->devs[0];
-
-    infcclResult_t r = infcclIpcExchangeBuffers(comm, sendbufs, totalBytes);
-    if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
     CUDACHECK(cudaSetDevice(dev0));
-    r = infcclEnsureStaged(comm, totalBytes);
+    infcclResult_t r = infcclEnsureStaged(comm, totalBytes);
     if (r != infcclSuccess) { cudaSetDevice(savedDev); return r; }
 
     T* full = NULL;
@@ -27,8 +24,7 @@ static infcclResult_t ipcReduceScatter(void** sendbufs, void** recvbufs,
     CUDACHECK(cudaStreamSynchronize(s0));
 
     for (int p = 1; p < ndev; p++) {
-        void* src_on_0 = comm->ipc.mapped[p][0];
-        CUDACHECK(cudaMemcpyAsync(comm->staged, src_on_0, totalBytes, cudaMemcpyDeviceToDevice, s0));
+        CUDACHECK(cudaMemcpyPeerAsync(comm->staged, dev0, sendbufs[p], comm->devs[p], totalBytes, s0));
         CUDACHECK(cudaStreamSynchronize(s0));
         ReduceInplaceSimple<T, FUNC><<<INFCCL_BLOCKS(totalCount), INFCCL_THREADS, 0, s0>>>(
             full, (const T*)comm->staged, totalCount);
@@ -36,24 +32,14 @@ static infcclResult_t ipcReduceScatter(void** sendbufs, void** recvbufs,
     }
 
     CUDACHECK(cudaMemcpyAsync(recvbufs[0], full, chunkBytes, cudaMemcpyDeviceToDevice, s0));
-
-    infcclResult_t r2 = infcclIpcExchangeBuffers(comm, recvbufs, chunkBytes);
-    if (r2 == infcclSuccess) {
-        for (int g = 1; g < ndev; g++) {
-            CUDACHECK(cudaSetDevice(comm->devs[g]));
-            cudaStream_t sg = comm->ipc.streams[g];
-            void* chunk_on_0_mapped = NULL;
-
-            cudaIpcMemHandle_t handle;
-            CUDACHECK(cudaSetDevice(dev0));
-            CUDACHECK(cudaIpcGetMemHandle(&handle, (char*)full + g * chunkBytes));
-            CUDACHECK(cudaSetDevice(comm->devs[g]));
-            CUDACHECK(cudaMemcpyPeer(recvbufs[g], comm->devs[g], (char*)full + g * chunkBytes, dev0, chunkBytes));
-        }
+    for (int g = 1; g < ndev; g++) {
+        cudaStream_t sg = comm->ipc.streams[g];
+        CUDACHECK(cudaMemcpyPeerAsync(recvbufs[g], comm->devs[g],
+            (char*)full + g * chunkBytes, dev0, chunkBytes, sg));
     }
+    for (int g = 0; g < ndev; g++)
+        CUDACHECK(cudaStreamSynchronize(comm->ipc.streams[g]));
 
-    CUDACHECK(cudaSetDevice(dev0));
-    CUDACHECK(cudaStreamSynchronize(s0));
     cudaFree(full);
     cudaSetDevice(savedDev);
     return infcclSuccess;
