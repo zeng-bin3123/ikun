@@ -65,7 +65,6 @@ infcclResult_t infcclAllGather(void** sendbufs, void** recvbufs,
         case infcclInt:    return allGatherWithType<int>(sendbufs, recvbufs, sendcount, comm, stream);
         case infcclHalf:   return allGatherWithType<half>(sendbufs, recvbufs, sendcount, comm, stream);
         case infcclFloat:  return allGatherWithType<float>(sendbufs, recvbufs, sendcount, comm, stream);
-        case infcclDouble: return allGatherWithType<double>(sendbufs, recvbufs, sendcount, comm, stream);
         case infcclInt64:  return allGatherWithType<long long>(sendbufs, recvbufs, sendcount, comm, stream);
         case infcclUint64: return allGatherWithType<unsigned long long>(sendbufs, recvbufs, sendcount, comm, stream);
         default: return infcclInvalidType;

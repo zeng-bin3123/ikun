@@ -81,7 +81,6 @@ infcclResult_t infcclReduce(void** buffs, int count,
         case infcclInt:    return reduceWithType<int>(buffs, count, op, root, comm, stream);
         case infcclHalf:   return reduceWithType<half>(buffs, count, op, root, comm, stream);
         case infcclFloat:  return reduceWithType<float>(buffs, count, op, root, comm, stream);
-        case infcclDouble: return reduceWithType<double>(buffs, count, op, root, comm, stream);
         case infcclInt64:  return reduceWithType<long long>(buffs, count, op, root, comm, stream);
         case infcclUint64: return reduceWithType<unsigned long long>(buffs, count, op, root, comm, stream);
         default: return infcclInvalidType;

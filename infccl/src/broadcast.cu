@@ -53,7 +53,6 @@ infcclResult_t infcclBcast(void** buffs, int count,
         case infcclInt:    return bcastWithType<int>(buffs, count, root, comm, stream);
         case infcclHalf:   return bcastWithType<half>(buffs, count, root, comm, stream);
         case infcclFloat:  return bcastWithType<float>(buffs, count, root, comm, stream);
-        case infcclDouble: return bcastWithType<double>(buffs, count, root, comm, stream);
         case infcclInt64:  return bcastWithType<long long>(buffs, count, root, comm, stream);
         case infcclUint64: return bcastWithType<unsigned long long>(buffs, count, root, comm, stream);
         default: return infcclInvalidType;

@@ -85,7 +85,6 @@ infcclResult_t infcclReduceScatter(void** sendbufs, void** recvbufs,
         case infcclInt:    return reduceScatterWithType<int>(sendbufs, recvbufs, recvcount, op, comm, stream);
         case infcclHalf:   return reduceScatterWithType<half>(sendbufs, recvbufs, recvcount, op, comm, stream);
         case infcclFloat:  return reduceScatterWithType<float>(sendbufs, recvbufs, recvcount, op, comm, stream);
-        case infcclDouble: return reduceScatterWithType<double>(sendbufs, recvbufs, recvcount, op, comm, stream);
         case infcclInt64:  return reduceScatterWithType<long long>(sendbufs, recvbufs, recvcount, op, comm, stream);
         case infcclUint64: return reduceScatterWithType<unsigned long long>(sendbufs, recvbufs, recvcount, op, comm, stream);
         default: return infcclInvalidType;
