@@ -1,4 +1,5 @@
 #include "core.h"
+#include <cuda_fp16.h>
 #include "enqueue.h"
 
 template<typename T>
