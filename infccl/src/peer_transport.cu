@@ -55,7 +55,7 @@ int PeerTransport::install(const std::string& local_name,
         if (ns < 1) ns = 1; if (ns > 4) ns = 4;
         nstreams_[g] = ns;
         for (int s = 0; s < ns; s++) {
-            if (cudaStreamCreateWithFlags(&streams_[g][s], cudaStreamNonBlocking) != cudaSuccess)
+            if (cudaStreamCreate(&streams_[g][s]) != cudaSuccess)
                 { cudaSetDevice(saved); return ERR_CUDA; }
         }
         stream_rr_[g] = 0;
