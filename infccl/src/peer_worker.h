@@ -143,6 +143,7 @@ public:
             is.deadline_us = arr[i].post_tick + timeout_us_;
             poll_queue_.push_back(is);
         }
+        inflight_count_.fetch_add(count);
     }
 
     void submitForPollingWithCallback(Transport::Slice* arr, int count,
@@ -157,6 +158,7 @@ public:
             is.deadline_us = arr[i].post_tick + timeout_us_;
             poll_queue_.push_back(is);
         }
+        inflight_count_.fetch_add(count);
     }
 
     void enqueueCallback(std::function<void()> fn) {
@@ -277,7 +279,6 @@ private:
         }
         for (auto& is : incoming) {
             inflight_.push_back(is);
-            inflight_count_.fetch_add(1);
         }
 
         if (inflight_.empty()) return;
