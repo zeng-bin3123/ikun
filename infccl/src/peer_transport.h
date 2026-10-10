@@ -30,6 +30,8 @@ public:
     PeerContext& context() { return ctx_; }
     PeerWorker& worker() { return worker_; }
     const PeerTransportConfig& config() const { return cfg_; }
+    int ndev() const { return ctx_.ndev(); }
+    int devId(int idx) const { return ctx_.gpu(idx).dev_id; }
     cudaStream_t stream(int gpu) { return streams_[gpu][0]; }
     cudaStream_t selectStream(int gpu, int idx = -1);
     void* stagingBuffer(int gpu) { return staging_[gpu]; }

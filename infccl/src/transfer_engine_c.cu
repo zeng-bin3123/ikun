@@ -47,6 +47,9 @@ int infccl_submit_transfer(infccl_transport_t xport, infccl_batch_id_t batch_id,
     for (size_t i = 0; i < count; i++) {
         reqs[i].opcode = (Transport::TransferRequest::OpCode)entries[i].opcode;
         reqs[i].source = entries[i].source;
+        reqs[i].dest = nullptr;
+        reqs[i].src_gpu = 0;
+        reqs[i].dst_gpu = 0;
         reqs[i].target_id = entries[i].target_id;
         reqs[i].target_offset = entries[i].target_offset;
         reqs[i].length = entries[i].length;

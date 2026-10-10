@@ -8,7 +8,7 @@
 #include <atomic>
 namespace infccl {
 struct WorkerStats {
-    std::atomic<uint64_t> slices_posted{0};
+    std::atomic<uint64_t> slices_submitted{0};
     std::atomic<uint64_t> slices_completed{0};
     std::atomic<uint64_t> slices_failed{0};
     std::atomic<uint64_t> slices_retried{0};
@@ -70,7 +70,7 @@ private:
         }
         cudaEventRecord(evpool_[g][ev], st);
         s->markPosted(now_us(), slot, ev);
-        stats_.slices_posted.fetch_add(1);
+        stats_.slices_submitted.fetch_add(1);
     }
     bool pollOne(Transport::Slice* s) {
         if (s->status != Transport::Slice::S_POSTED) return s->terminal();
