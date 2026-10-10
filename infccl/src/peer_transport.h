@@ -9,8 +9,8 @@
 namespace infccl {
 
 struct PeerTransportConfig {
-    size_t slice_bytes = 16 * 1024 * 1024;
-    size_t no_slice_threshold = 16 * 1024 * 1024;
+    size_t slice_bytes = 4 * 1024 * 1024;
+    size_t no_slice_threshold = 1 * 1024 * 1024;
     int num_streams_per_gpu = 2;
     int timeout_ms = 5000;
     int max_retry = 3;
