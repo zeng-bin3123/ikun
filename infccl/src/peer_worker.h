@@ -74,6 +74,12 @@ public:
         callbacks_.push_back(fn);
     }
 
+    void submitForPolling(Transport::Slice* arr, int count) {
+        std::lock_guard<std::mutex> lk(mu_);
+        for (int i = 0; i < count; i++)
+            poll_queue_.push_back(&arr[i]);
+    }
+
     const WorkerStats& stats() const { return stats_; }
     const PeerHealthStatus& health(int gpu) const { return health_[gpu]; }
     int isHealthy(int gpu) const { return health_[gpu].alive; }
@@ -179,8 +185,37 @@ private:
                 for (auto& fn : cbs) fn();
             }
 
+            {
+                std::deque<Transport::Slice*> new_polls;
+                {
+                    std::lock_guard<std::mutex> lk(mu_);
+                    for (auto* s : poll_queue_) inflight_.push_back(s);
+                    poll_queue_.clear();
+                }
+                std::deque<Transport::Slice*> remain;
+                for (auto* s : inflight_) {
+                    if (s->status != Transport::Slice::S_POSTED) continue;
+                    int g = s->src_gpu;
+                    cudaSetDevice(devs_[g]);
+                    cudaError_t e = cudaEventQuery(evpool_[g][s->event_slot]);
+                    if (e == cudaSuccess) {
+                        s->markSuccess();
+                        stats_.slices_completed.fetch_add(1);
+                        stats_.bytes_transferred.fetch_add(s->length);
+                    } else if (e == cudaErrorNotReady) {
+                        remain.push_back(s);
+                    } else {
+                        s->markFailed();
+                        stats_.slices_failed.fetch_add(1);
+                    }
+                }
+                inflight_.swap(remain);
+            }
+
             stats_.poll_rounds.fetch_add(1);
-            for (int i = 0; i < 100; i++) INFCCL_PAUSE();
+            if (inflight_.empty()) {
+                for (int i = 0; i < 100; i++) INFCCL_PAUSE();
+            }
         }
     }
 
@@ -198,6 +233,8 @@ private:
     float bw_results_[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
     float lat_results_[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
     std::deque<std::function<void()>> callbacks_;
+    std::deque<Transport::Slice*> poll_queue_;
+    std::deque<Transport::Slice*> inflight_;
 
     cudaEvent_t (*evpool_)[256];
     int* evnext_;

@@ -273,7 +273,10 @@ int PeerTransport::postSlicesAsync(TransferTask& task) {
             stats_.slices_failed.fetch_add(1);
             continue;
         }
-        sl.markPosted(now_us(), slot, 0);
+        int ev = evnext_[g] % EVENT_POOL;
+        evnext_[g]++;
+        cudaEventRecord(evpool_[g][ev], st);
+        sl.markPosted(now_us(), slot, ev);
         src_used |= (1 << g);
         stats_.slices_submitted.fetch_add(1);
         stats_.bytes_submitted.fetch_add(sl.length);
@@ -382,6 +385,7 @@ int PeerTransport::submitTransferAsync(BatchID batch_id,
         }
         task.init(nslice);
         all_src |= postSlicesAsync(task);
+        worker_.submitForPolling(task.slices.data(), task.total);
     }
 
     cudaSetDevice(saved_dev);
@@ -390,11 +394,9 @@ int PeerTransport::submitTransferAsync(BatchID batch_id,
 }
 
 int PeerTransport::syncAndComplete(BatchID batch_id, uint8_t src_used) {
+    (void)src_used;
     auto& bd = toBatch(batch_id);
     int saved_dev; cudaGetDevice(&saved_dev);
-    syncSrcDevices(src_used);
-    for (auto& task : bd.tasks)
-        completeSlices(task);
     cudaSetDevice(saved_dev);
     return OK;
 }
