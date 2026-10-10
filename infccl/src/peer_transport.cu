@@ -122,15 +122,31 @@ int PeerTransport::submitTransfer(BatchID batch_id,
             task.init(nslice);
         }
         int saved_dev; cudaGetDevice(&saved_dev);
+        uint8_t src_used = 0;
         for (int si = 0; si < task.total; si++) {
             Slice& sl = task.slices[si];
-            cudaSetDevice(ctx_.gpu(sl.src_gpu).dev_id);
-            cudaError_t ce = cudaMemcpyPeer(
+            int g = sl.src_gpu;
+            cudaSetDevice(ctx_.gpu(g).dev_id);
+            int slot = stream_rr_[g] % nstreams_[g];
+            stream_rr_[g]++;
+            cudaStream_t st = streams_[g][slot];
+            cudaError_t ce = cudaMemcpyPeerAsync(
                 sl.dst_addr, ctx_.gpu(sl.dst_gpu).dev_id,
                 sl.src_addr, ctx_.gpu(sl.src_gpu).dev_id,
-                sl.length);
-            if (ce != cudaSuccess) sl.markFailed();
-            else sl.markSuccess();
+                sl.length, st);
+            if (ce != cudaSuccess) { sl.markFailed(); continue; }
+            sl.markPosted(now_us(), slot, 0);
+            src_used |= (1 << g);
+        }
+        for (int g = 0; g < ctx_.ndev(); g++) {
+            if (!((src_used >> g) & 1)) continue;
+            cudaSetDevice(ctx_.gpu(g).dev_id);
+            for (int s = 0; s < nstreams_[g]; s++)
+                cudaStreamSynchronize(streams_[g][s]);
+        }
+        for (int si = 0; si < task.total; si++) {
+            Slice& sl = task.slices[si];
+            if (sl.status == Slice::S_POSTED) sl.markSuccess();
         }
         cudaSetDevice(saved_dev);
     }
