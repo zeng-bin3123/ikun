@@ -63,12 +63,12 @@ int PeerTransport::install(const std::string& local_name,
             if (cudaStreamCreateWithFlags(&streams_[g][s], cudaStreamNonBlocking) != cudaSuccess)
                 { cudaSetDevice(saved); return ERR_CUDA; }
         }
-        stream_rr_[g] = 0;
+        stream_rr_[g] = 1;
         for (int e = 0; e < INFCCL_EVENT_POOL_SIZE; e++) {
             if (cudaEventCreateWithFlags(&evpool_[g][e], cudaEventDisableTiming) != cudaSuccess)
                 { cudaSetDevice(saved); return ERR_CUDA; }
         }
-        evnext_[g] = 0;
+        evnext_[g] = 1;
         for (int o = 0; o < ctx_.ndev(); o++) {
             if (o == g) continue;
             cudaDeviceEnablePeerAccess(ctx_.gpu(o).dev_id, 0);
