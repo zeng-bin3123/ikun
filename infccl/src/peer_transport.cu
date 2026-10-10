@@ -136,11 +136,26 @@ int PeerTransport::submitTransfer(BatchID batch_id,
                 sl.src_addr, ctx_.gpu(sl.src_gpu).dev_id,
                 sl.length, st);
             if (ce != cudaSuccess) {
+                fprintf(stderr, "DBG: memcpy FAILED ce=%d src=%p dst=%p len=%zu\n",
+                    (int)ce, sl.src_addr, sl.dst_addr, sl.length);
                 sl.markFailed();
                 continue;
             }
             cudaEventRecord(evpool_[g][ev], st);
             sl.markPosted(now_us(), slot, ev);
+            if (ti == 0 && si == 0) {
+                cudaStreamSynchronize(st);
+                float dbg_src = 0, dbg_dst = 0;
+                cudaSetDevice(ctx_.gpu(sl.src_gpu).dev_id);
+                cudaMemcpy(&dbg_src, sl.src_addr, 4, cudaMemcpyDeviceToHost);
+                cudaSetDevice(ctx_.gpu(sl.dst_gpu).dev_id);
+                cudaMemcpy(&dbg_dst, sl.dst_addr, 4, cudaMemcpyDeviceToHost);
+                fprintf(stderr, "DBG slice[0][0]: src_gpu=%d dst_gpu=%d src=%p dst=%p len=%zu stream=%p slot=%d\n",
+                    sl.src_gpu, sl.dst_gpu, sl.src_addr, sl.dst_addr, sl.length, (void*)st, slot);
+                fprintf(stderr, "DBG slice[0][0]: src_val=%.4f dst_val=%.4f %s\n",
+                    dbg_src, dbg_dst, (dbg_src == dbg_dst && dbg_src != 0) ? "OK" : "MISMATCH");
+                cudaSetDevice(ctx_.gpu(g).dev_id);
+            }
         }
         cudaSetDevice(saved_dev);
         worker_.submitBatch(task.slices.data(), task.total);
