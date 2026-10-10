@@ -1,5 +1,6 @@
 #include "transfer_engine_c.h"
 #include "transfer_engine.h"
+#include "bi_v100.h"
 
 using namespace infccl;
 
