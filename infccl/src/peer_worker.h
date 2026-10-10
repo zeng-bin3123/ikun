@@ -79,6 +79,7 @@ private:
         cudaSetDevice(devs_[g]);
         cudaError_t e = cudaEventQuery(evpool_[g][s->event_slot]);
         if (e == cudaSuccess) {
+            cudaStreamSynchronize(streams_[g][s->stream_slot]);
             s->markSuccess();
             stats_.slices_completed.fetch_add(1);
             stats_.bytes_transferred.fetch_add(s->length);
