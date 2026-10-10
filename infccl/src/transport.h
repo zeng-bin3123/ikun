@@ -133,17 +133,6 @@ public:
             if (now_us() > deadline) return ERR_TIMEOUT;
             INFCCL_PAUSE();
         }
-        int saved; cudaGetDevice(&saved);
-        uint8_t synced = 0;
-        for (auto& t : bd->tasks) {
-            int d = t.orig.dst_gpu;
-            if (d >= 0 && d < 8 && !((synced >> d) & 1)) {
-                cudaSetDevice(d);
-                cudaDeviceSynchronize();
-                synced |= (1 << d);
-            }
-        }
-        cudaSetDevice(saved);
         return bd->status() == COMPLETED ? OK : ERR_FAIL;
     }
     std::shared_ptr<TransferMetadata>& meta() { return metadata_; }

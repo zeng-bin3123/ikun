@@ -54,21 +54,16 @@ int PeerTransport::install(const std::string& local_name,
         int ns = cfg_.num_streams_per_gpu;
         if (ns < 1) ns = 1; if (ns > 4) ns = 4;
         nstreams_[g] = ns;
-        {
-            cudaStream_t burn;
-            cudaStreamCreateWithFlags(&burn, cudaStreamNonBlocking);
-            cudaStreamDestroy(burn);
-        }
         for (int s = 0; s < ns; s++) {
             if (cudaStreamCreateWithFlags(&streams_[g][s], cudaStreamNonBlocking) != cudaSuccess)
                 { cudaSetDevice(saved); return ERR_CUDA; }
         }
-        stream_rr_[g] = 1;
+        stream_rr_[g] = 0;
         for (int e = 0; e < INFCCL_EVENT_POOL_SIZE; e++) {
             if (cudaEventCreateWithFlags(&evpool_[g][e], cudaEventDisableTiming) != cudaSuccess)
                 { cudaSetDevice(saved); return ERR_CUDA; }
         }
-        evnext_[g] = 1;
+        evnext_[g] = 0;
         for (int o = 0; o < ctx_.ndev(); o++) {
             if (o == g) continue;
             cudaDeviceEnablePeerAccess(ctx_.gpu(o).dev_id, 0);
@@ -148,7 +143,15 @@ int PeerTransport::submitTransfer(BatchID batch_id,
             sl.markPosted(now_us(), slot, ev);
         }
         cudaSetDevice(saved_dev);
-        worker_.submitBatch(task.slices.data(), task.total);
+        for (int si = 0; si < task.total; si++) {
+            Slice& sl = task.slices[si];
+            if (sl.status == Slice::S_POSTED) {
+                int g2 = sl.dst_gpu;
+                cudaSetDevice(ctx_.gpu(g2).dev_id);
+                cudaStreamSynchronize(streams_[g2][sl.stream_slot]);
+                sl.markSuccess();
+            }
+        }
     }
     return OK;
 }
