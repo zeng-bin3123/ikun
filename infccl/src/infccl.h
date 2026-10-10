@@ -3,81 +3,43 @@
 
 #include <cuda_runtime.h>
 #include <stddef.h>
+#include <stdint.h>
 
-#define INFCCL_MAJOR 0
-#define INFCCL_MINOR 1
-#define INFCCL_PATCH 0
+#ifndef INFCCL_MAX_DEVS
 #define INFCCL_MAX_DEVS 8
-#define INFCCL_MAX_QUEUE 4
-#define INFCCL_DEFAULT_BUFFER_SIZE (1 << 21)
+#endif
 
-typedef enum {
-    infcclSuccess               = 0,
-    infcclUnhandledCudaError    = 1,
-    infcclSystemError           = 2,
-    infcclInternalError         = 3,
-    infcclInvalidDevicePointer  = 4,
-    infcclInvalidRank           = 5,
-    infcclUnsupportedDeviceCount= 6,
-    infcclDeviceNotFound        = 7,
-    infcclInvalidDeviceIndex    = 8,
-    infcclCudaMallocFailed      = 9,
-    infcclRankMismatch          = 10,
-    infcclInvalidArgument       = 11,
-    infcclInvalidType           = 12,
-    infcclInvalidOperation      = 13,
-    infcclNumResults            = 14
-} infcclResult_t;
+namespace infccl { struct CommState; }
+typedef infccl::CommState* infcclComm_t;
 
-typedef enum {
-    infcclSum  = 0,
-    infcclProd = 1,
-    infcclMax  = 2,
-    infcclMin  = 3,
-    infcclNumOps = 4
-} infcclRedOp_t;
+#ifdef __cplusplus
+extern "C" {
+#endif
 
-typedef enum {
-    infcclChar   = 0,
-    infcclInt    = 1,
-    infcclHalf   = 2,
-    infcclFloat  = 3,
-    infcclDouble = 4,
-    infcclInt64  = 5,
-    infcclUint64 = 6,
-    infcclNumTypes = 7
-} infcclDataType_t;
+const char* infcclGetErrorString(int code);
+int infcclCommInitAll(infcclComm_t* comms, int ndev, const int* devlist);
+int infcclCommDestroy(infcclComm_t comm);
+int infcclCommCount(const infcclComm_t comm, int* count);
+int infcclCommCuDevice(const infcclComm_t comm, int* device);
+int infcclCommUserRank(const infcclComm_t comm, int* rank);
+int infcclRegisterMemory(infcclComm_t comm, int gpu, void* addr, size_t bytes);
+int infcclUnregisterMemory(infcclComm_t comm, int gpu, void* addr);
+int infcclAllReduce(void** buffs, int count, int datatype, int op, infcclComm_t comm, cudaStream_t stream);
+int infcclReduce(void** buffs, int count, int datatype, int op, int root, infcclComm_t comm, cudaStream_t stream);
+int infcclBcast(void** buffs, int count, int datatype, int root, infcclComm_t comm, cudaStream_t stream);
+int infcclAllGather(void** sbufs, void** rbufs, int sendcount, int datatype, infcclComm_t comm, cudaStream_t stream);
+int infcclReduceScatter(void** sbufs, void** rbufs, int recvcount, int datatype, int op, infcclComm_t comm, cudaStream_t stream);
 
-struct infcclComm;
-typedef struct infcclComm* infcclComm_t;
+#ifdef __cplusplus
+}
+#endif
 
-infcclResult_t infcclGetVersion(int* version);
-infcclResult_t infcclCommInitAll(infcclComm_t* comms, int ndev, const int* devlist);
-infcclResult_t infcclCommDestroy(infcclComm_t comm);
-infcclResult_t infcclCommCount(const infcclComm_t comm, int* count);
-infcclResult_t infcclCommCuDevice(const infcclComm_t comm, int* device);
-infcclResult_t infcclCommUserRank(const infcclComm_t comm, int* rank);
+typedef int infcclResult_t;
+typedef int infcclRedOp_t;
+typedef int infcclDataType_t;
 
-infcclResult_t infcclAllReduce(void** buffs, int count,
-    infcclDataType_t datatype, infcclRedOp_t op,
-    infcclComm_t comm, cudaStream_t stream);
-
-infcclResult_t infcclReduce(void** buffs, int count,
-    infcclDataType_t datatype, infcclRedOp_t op, int root,
-    infcclComm_t comm, cudaStream_t stream);
-
-infcclResult_t infcclBcast(void** buffs, int count,
-    infcclDataType_t datatype, int root,
-    infcclComm_t comm, cudaStream_t stream);
-
-infcclResult_t infcclAllGather(void** sendbufs, void** recvbufs,
-    int sendcount, infcclDataType_t datatype,
-    infcclComm_t comm, cudaStream_t stream);
-
-infcclResult_t infcclReduceScatter(void** sendbufs, void** recvbufs,
-    int recvcount, infcclDataType_t datatype, infcclRedOp_t op,
-    infcclComm_t comm, cudaStream_t stream);
-
-const char* infcclGetErrorString(infcclResult_t result);
+enum { infcclSuccess=0 };
+enum { infcclSum=0, infcclProd=1, infcclMax=2, infcclMin=3 };
+enum { infcclChar=0, infcclInt=1, infcclHalf=2, infcclFloat=3, infcclInt64=4, infcclUint64=5 };
 
 #endif

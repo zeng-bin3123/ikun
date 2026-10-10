@@ -1,33 +1,26 @@
 CXX      := /usr/local/corex/bin/clang++
 ARCH     := ivcore10
-CUDAPATH := /usr/local/corex-3.2.3
-CFLAGS   := -x cuda --cuda-gpu-arch=$(ARCH) --cuda-path=$(CUDAPATH) -I/usr/local/corex/include -Isrc
-LDFLAGS  := -L/usr/local/corex/lib64 -lcudart
+CUDAPATH := /usr/local/corex
+CFLAGS   := -x cuda --cuda-gpu-arch=$(ARCH) --cuda-path=$(CUDAPATH) -I$(CUDAPATH)/include -Isrc -O2
+LDFLAGS  := -L$(CUDAPATH)/lib64 -lcudart -lpthread
+SRCS     := src/peer_transport.cu src/transfer_engine_c.cu src/collectives.cu
+TESTS    := all_reduce_test transfer_test collective_test
+BENCH    := transfer_bench
 
-SRCS     := src/core.cu src/all_reduce.cu src/reduce.cu src/broadcast.cu src/all_gather.cu src/reduce_scatter.cu
-TESTS    := all_reduce_test reduce_test broadcast_test all_gather_test reduce_scatter_test
-
-all: $(TESTS)
+all: $(TESTS) $(BENCH)
 
 all_reduce_test: $(SRCS) test/all_reduce_test.cu
 	$(CXX) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-reduce_test: $(SRCS) test/reduce_test.cu
+transfer_test: src/peer_transport.cu test/transfer_test.cu
 	$(CXX) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-broadcast_test: $(SRCS) test/broadcast_test.cu
+collective_test: $(SRCS) test/collective_test.cu
 	$(CXX) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-all_gather_test: $(SRCS) test/all_gather_test.cu
+transfer_bench: src/peer_transport.cu src/collectives.cu src/transfer_engine_c.cu bench/transfer_bench.cu
 	$(CXX) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
-reduce_scatter_test: $(SRCS) test/reduce_scatter_test.cu
-	$(CXX) $(CFLAGS) $^ -o $@ $(LDFLAGS)
-
 test: $(TESTS)
-	@for t in $(TESTS); do echo "=== $$t ===" && CUDA_VISIBLE_DEVICES=0,1,2 timeout 120 ./$$t && echo "" || exit 1; done
-
+	@for t in $(TESTS); do echo "=== $$t ===" && CUDA_VISIBLE_DEVICES=0,1,2,3 timeout 120 ./$$t && echo "" || exit 1; done
+bench: $(BENCH)
+	CUDA_VISIBLE_DEVICES=0,1,2,3 ./transfer_bench
 clean:
-	rm -f $(TESTS)
-
-.PHONY: all test clean
+	rm -f $(TESTS) $(BENCH)
+.PHONY: all test bench clean
