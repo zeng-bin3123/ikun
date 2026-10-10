@@ -28,6 +28,11 @@
 #endif
 namespace infccl {
 
+static inline int64_t now_us() {
+    struct timespec ts; clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (int64_t)ts.tv_sec * 1000000LL + ts.tv_nsec / 1000;
+}
+
 enum ErrorCode {
     OK                = 0,
     ERR_CUDA          = -1,
@@ -39,6 +44,7 @@ enum ErrorCode {
     ERR_OVERLAP       = -7,
     ERR_TIMEOUT       = -8,
     ERR_UNSUPPORTED   = -9,
+    ERR_FAIL          = -10,
 };
 
 static inline int64_t getCurrentTimeNano() {
