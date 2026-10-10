@@ -156,7 +156,7 @@ int main() {
 
     auto& ws=peer->worker().stats();
     printf("\nworker stats: posted=%lu completed=%lu failed=%lu retried=%lu bytes=%lu polls=%lu\n",
-        ws.slices_posted.load(),ws.slices_completed.load(),ws.slices_failed.load(),
+        ws.slices_submitted.load(),ws.slices_completed.load(),ws.slices_failed.load(),
         ws.slices_retried.load(),ws.bytes_transferred.load(),ws.poll_rounds.load());
 
     printf("\n=== %s ===\n", fails==0?"ALL PASS":"FAILURES DETECTED");
