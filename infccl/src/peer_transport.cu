@@ -124,19 +124,13 @@ int PeerTransport::submitTransfer(BatchID batch_id,
         int saved_dev; cudaGetDevice(&saved_dev);
         for (int si = 0; si < task.total; si++) {
             Slice& sl = task.slices[si];
-            int g = sl.dst_gpu;
-            cudaSetDevice(ctx_.gpu(g).dev_id);
-            cudaStream_t st = streams_[g][0];
-            cudaError_t ce = cudaMemcpyPeerAsync(
+            cudaSetDevice(ctx_.gpu(sl.dst_gpu).dev_id);
+            cudaError_t ce = cudaMemcpyPeer(
                 sl.dst_addr, ctx_.gpu(sl.dst_gpu).dev_id,
                 sl.src_addr, ctx_.gpu(sl.src_gpu).dev_id,
-                sl.length, st);
-            if (ce != cudaSuccess) {
-                sl.markFailed();
-                continue;
-            }
-            cudaStreamSynchronize(st);
-            sl.markSuccess();
+                sl.length);
+            if (ce != cudaSuccess) sl.markFailed();
+            else sl.markSuccess();
         }
         cudaSetDevice(saved_dev);
     }
