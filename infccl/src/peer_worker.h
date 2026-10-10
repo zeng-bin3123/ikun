@@ -111,7 +111,6 @@ private:
                 batch.swap(pending_);
             }
             for (auto* s : batch) {
-                if (s->status == Transport::Slice::S_PENDING) postOne(s);
                 if (!s->terminal()) inflight_.push_back(s);
             }
             std::deque<Transport::Slice*> remain;
