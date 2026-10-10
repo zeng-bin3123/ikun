@@ -58,7 +58,7 @@ int main(){
             cudaMemcpyPeerAsync(sl.dst_addr,peer->devId(sl.dst_gpu),
                 sl.src_addr,peer->devId(sl.src_gpu),sl.length,st);
             int ev=si%256;
-            cudaEventRecord(peer->context().eventPool(sl.src_gpu,ev),st);
+            cudaEventRecord(peer->eventPool(sl.src_gpu,ev),st);
             sl.markPosted(now_us(),0,ev);
         }
         cudaSetDevice(saved);
@@ -196,7 +196,7 @@ int main(){
             cudaStream_t st=peer->selectStream(0);
             cudaMemcpyPeerAsync(dd[i],peer->devId(1),d0,peer->devId(0),bytes,st);
             int ev=i%256;
-            cudaEventRecord(peer->context().eventPool(0,ev),st);
+            cudaEventRecord(peer->eventPool(0,ev),st);
             s.markPosted(now_us(),0,ev);
             cudaSetDevice(saved);
             peer->worker().submitForPollingWithCallback(
