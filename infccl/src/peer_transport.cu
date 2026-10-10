@@ -162,6 +162,9 @@ int PeerTransport::install(const std::string& local_name,
     if (rc != OK) return rc;
 
     cacheBandwidth();
+    memset(tuned_slice_, 0, sizeof(tuned_slice_));
+    memset(tuned_bw_, 0, sizeof(tuned_bw_));
+    if (cfg_.adaptive_slice) tuneAll();
 
     int dl[INFCCL_MAX_DEVS];
     for (int i = 0; i < ctx_.ndev(); i++) dl[i] = ctx_.gpu(i).dev_id;
@@ -174,11 +177,69 @@ int PeerTransport::install(const std::string& local_name,
 
 size_t PeerTransport::selectSliceSize(int src, int dst, size_t total) const {
     if (total <= cfg_.no_slice_threshold) return total;
-    if (cfg_.adaptive_slice) {
-        size_t opt = ctx_.pair(src, dst).optimal_slice;
-        if (opt > 0 && opt >= 1024) return opt;
-    }
+    if (tuned_slice_[src][dst] > 0) return tuned_slice_[src][dst];
     return cfg_.slice_bytes;
+}
+
+int PeerTransport::tuneSliceForPair(int src, int dst) {
+    if (src < 0 || src >= ctx_.ndev() || dst < 0 || dst >= ctx_.ndev() || src == dst)
+        return ERR_INVALID_ARG;
+    int saved; cudaGetDevice(&saved);
+    cudaSetDevice(ctx_.gpu(src).dev_id);
+
+    size_t buf_bytes = 16 * 1024 * 1024;
+    float *s_buf, *d_buf;
+    if (cudaMalloc(&s_buf, buf_bytes) != cudaSuccess) { cudaSetDevice(saved); return ERR_CUDA; }
+    cudaSetDevice(ctx_.gpu(dst).dev_id);
+    if (cudaMalloc(&d_buf, buf_bytes) != cudaSuccess) {
+        cudaSetDevice(ctx_.gpu(src).dev_id); cudaFree(s_buf); cudaSetDevice(saved); return ERR_CUDA;
+    }
+
+    cudaSetDevice(ctx_.gpu(src).dev_id);
+    cudaStream_t s; cudaStreamCreate(&s);
+    cudaMemcpyPeerAsync(d_buf, ctx_.gpu(dst).dev_id, s_buf, ctx_.gpu(src).dev_id, buf_bytes, s);
+    cudaStreamSynchronize(s);
+
+    cudaEvent_t t0, t1; cudaEventCreate(&t0); cudaEventCreate(&t1);
+
+    size_t candidates[] = {256*1024, 1024*1024, 4*1024*1024, 16*1024*1024};
+    float best_bw = 0;
+    size_t best_slice = 4 * 1024 * 1024;
+
+    for (int ci = 0; ci < 4; ci++) {
+        size_t slice = candidates[ci];
+        int nslice = buf_bytes / slice;
+        if (nslice < 1) nslice = 1;
+        int iters = (nslice <= 4) ? 50 : 20;
+        cudaEventRecord(t0, s);
+        for (int it = 0; it < iters; it++)
+            for (int k = 0; k < nslice; k++)
+                cudaMemcpyPeerAsync((char*)d_buf + k*slice, ctx_.gpu(dst).dev_id,
+                    (char*)s_buf + k*slice, ctx_.gpu(src).dev_id, slice, s);
+        cudaEventRecord(t1, s); cudaEventSynchronize(t1);
+        float ms; cudaEventElapsedTime(&ms, t0, t1);
+        float bw = (float)(buf_bytes * iters) * 1e-6f / ms;
+        if (bw > best_bw) { best_bw = bw; best_slice = slice; }
+    }
+
+    tuned_slice_[src][dst] = best_slice;
+    tuned_bw_[src][dst] = best_bw;
+
+    cudaEventDestroy(t0); cudaEventDestroy(t1);
+    cudaStreamDestroy(s);
+    cudaSetDevice(ctx_.gpu(src).dev_id); cudaFree(s_buf);
+    cudaSetDevice(ctx_.gpu(dst).dev_id); cudaFree(d_buf);
+    cudaSetDevice(saved);
+    return OK;
+}
+
+int PeerTransport::tuneAll() {
+    for (int i = 0; i < ctx_.ndev(); i++)
+        for (int j = 0; j < ctx_.ndev(); j++) {
+            if (i == j) continue;
+            tuneSliceForPair(i, j);
+        }
+    return OK;
 }
 
 int PeerTransport::findGpuByPtr(void* ptr) {

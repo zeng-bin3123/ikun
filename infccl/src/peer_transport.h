@@ -77,6 +77,10 @@ public:
 
     float measuredBandwidth(int src, int dst) const;
     float measuredLatency(int src, int dst) const;
+    int tuneSliceForPair(int src, int dst);
+    int tuneAll();
+    size_t tunedSlice(int src, int dst) const { return tuned_slice_[src][dst]; }
+    float tunedBw(int src, int dst) const { return tuned_bw_[src][dst]; }
     void printStats(FILE* out = stdout) const;
 
 protected:
@@ -115,6 +119,8 @@ private:
 
     float bw_cache_[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
     float lat_cache_[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
+    size_t tuned_slice_[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
+    float tuned_bw_[INFCCL_MAX_DEVS][INFCCL_MAX_DEVS];
 
     MemoryRegionEntry registered_[MAX_REGISTERED];
     int nregistered_;
