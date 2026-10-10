@@ -296,6 +296,10 @@ private:
             if (s->status != Transport::Slice::S_POSTED) {
                 if (s->terminal()) {
                     inflight_count_.fetch_sub(1);
+                    if (is.cb) {
+                        is.cb(is.batch_id, is.task_idx, s->status == Transport::Slice::S_SUCCESS);
+                        stats_.callbacks_executed.fetch_add(1);
+                    }
                     continue;
                 }
                 remain.push_back(is);
