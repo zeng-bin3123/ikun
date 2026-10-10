@@ -395,7 +395,7 @@ int PeerTransport::stageFrom(int dst_gpu, void* src_ptr, int src_gpu,
     size_t offset, size_t bytes, int pool) {
     if (ensureStaging(dst_gpu, bytes, pool) != OK) return ERR_CUDA;
     cudaSetDevice(ctx_.gpu(src_gpu).dev_id);
-    cudaStream_t s = streams_[src_gpu][0];
+    cudaStream_t s = streams_[dst_gpu][0];
     cudaMemcpyPeerAsync(staging_[dst_gpu][pool], ctx_.gpu(dst_gpu).dev_id,
         (char*)src_ptr + offset, ctx_.gpu(src_gpu).dev_id, bytes, s);
     return OK;
@@ -407,7 +407,8 @@ int PeerTransport::stageTo(int src_gpu, void* dst_ptr, int dst_gpu,
     cudaSetDevice(ctx_.gpu(src_gpu).dev_id);
     cudaStream_t s = streams_[src_gpu][0];
     cudaMemcpyPeerAsync((char*)dst_ptr + offset, ctx_.gpu(dst_gpu).dev_id,
-        staging_[src_gpu][pool], ctx_.gpu(src_gpu).dev_id, bytes, s);
+        staging_[src_gpu][pool], ctx_.gpu(src_gpu).dev_id,
+        bytes, s);
     return OK;
 }
 
