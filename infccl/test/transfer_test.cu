@@ -147,7 +147,7 @@ int main() {
             xport->waitBatch(bid);
             xport->freeBatchID(bid);
         }
-        float eng_bw=bytes*50.0/(float)(now_us()-es);
+        float eng_bw=bytes*50.0*1e-3/(float)(now_us()-es);
         printf("  raw:    %.1f GB/s\n  engine: %.1f GB/s\n  overhead: %.0f%%\n",
             raw_bw,eng_bw,100.0*(1.0-eng_bw/raw_bw));
         cudaStreamDestroy(rs);cudaEventDestroy(t0);cudaEventDestroy(t1);
