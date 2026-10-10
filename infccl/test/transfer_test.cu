@@ -154,6 +154,34 @@ int main() {
         CCHK(cudaSetDevice(0));cudaFree(d0);CCHK(cudaSetDevice(1));cudaFree(d1);
     }
 
+    printf("\n[async-worker] 16MB 0->1 via submitTransferAsync + waitBatch\n");
+    {
+        int N=4*1024*1024;size_t bytes=N*sizeof(float);
+        float*h=(float*)malloc(bytes);fill(h,N,99.0f);
+        CCHK(cudaSetDevice(0));float*d0;CCHK(cudaMalloc(&d0,bytes));
+        CCHK(cudaMemcpy(d0,h,bytes,cudaMemcpyHostToDevice));
+        CCHK(cudaSetDevice(1));float*d1;CCHK(cudaMalloc(&d1,bytes));
+        CCHK(cudaMemset(d1,0,bytes));
+
+        auto bid=xport->allocateBatchID(1);
+        uint8_t src_used=0;
+        std::vector<Transport::TransferRequest> reqs={
+            {Transport::TransferRequest::WRITE,d0,d1,bytes,0,1,0,0}};
+        peer->submitTransferAsync(bid,reqs,&src_used);
+        int rc=xport->waitBatch(bid,10000);
+        float*h2=(float*)malloc(bytes);
+        CCHK(cudaSetDevice(1));CCHK(cudaMemcpy(h2,d1,bytes,cudaMemcpyDeviceToHost));
+        int errs=verify(h2,N,99.0f);
+        printf("  errs=%d worker_completed=%lu %s\n",errs,
+            peer->worker().stats().slices_completed.load(),
+            (rc==OK&&errs==0)?"PASS":"FAIL");
+        if(rc!=OK||errs>0)fails++;
+        xport->freeBatchID(bid);
+        CCHK(cudaSetDevice(0));cudaFree(d0);
+        CCHK(cudaSetDevice(1));cudaFree(d1);
+        free(h);free(h2);
+    }
+
     auto& ws=peer->worker().stats();
     printf("\nworker stats: posted=%lu completed=%lu failed=%lu retried=%lu bytes=%lu polls=%lu\n",
         ws.slices_submitted.load(),ws.slices_completed.load(),ws.slices_failed.load(),
