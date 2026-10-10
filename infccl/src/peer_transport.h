@@ -65,6 +65,7 @@ public:
     int devId(int idx) const { return ctx_.gpu(idx).dev_id; }
 
     cudaStream_t stream(int gpu) { return streams_[gpu][0]; }
+    cudaEvent_t& eventPool(int gpu, int idx) { return evpool_[gpu][idx % EVENT_POOL]; }
     cudaStream_t selectStream(int gpu, int idx = -1);
     void* stagingBuffer(int gpu, int pool = 0) { return staging_[gpu][pool]; }
 
