@@ -53,7 +53,7 @@ public:
     const WorkerStats& stats() const { return stats_; }
 private:
     void postOne(Transport::Slice* s) {
-        int g = s->src_gpu;
+        int g = s->dst_gpu;
         cudaSetDevice(devs_[g]);
         int slot = stream_rr_[g] % nstreams_[g];
         stream_rr_[g]++;
@@ -75,7 +75,7 @@ private:
     }
     bool pollOne(Transport::Slice* s) {
         if (s->status != Transport::Slice::S_POSTED) return s->terminal();
-        int g = s->src_gpu;
+        int g = s->dst_gpu;
         cudaSetDevice(devs_[g]);
         cudaError_t e = cudaEventQuery(evpool_[g][s->event_slot]);
         if (e == cudaSuccess) {
@@ -126,7 +126,7 @@ private:
         }
         for (auto* s : inflight_) {
             if (s->status == Transport::Slice::S_POSTED) {
-                int g = s->src_gpu;
+                int g = s->dst_gpu;
                 cudaSetDevice(devs_[g]);
                 cudaEventSynchronize(evpool_[g][s->event_slot]);
                 s->markSuccess();
