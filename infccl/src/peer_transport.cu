@@ -346,9 +346,8 @@ int PeerTransport::submitTransfer(BatchID batch_id,
             task.init(nslice);
         }
 
-        uint8_t src_used = postSlicesAsync(task);
-        syncSrcDevices(src_used);
-        completeSlices(task);
+        postSlicesAsync(task);
+        worker_.submitForPolling(task.slices.data(), task.total);
     }
 
     cudaSetDevice(saved_dev);
