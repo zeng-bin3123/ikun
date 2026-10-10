@@ -2,7 +2,6 @@
 #define INFCCL_PEER_WORKER_H_
 #include "transport.h"
 #include "common.h"
-#include "bi_v100.h"
 #include <thread>
 #include <mutex>
 #include <deque>

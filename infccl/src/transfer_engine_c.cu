@@ -3,6 +3,45 @@
 
 using namespace infccl;
 
+namespace infccl {
+__global__ void cap_warp_kernel(int* out) { if (threadIdx.x == 0) out[0] = warpSize; }
+__global__ void cap_fp64_kernel(double* out) { out[0] = 1.0 + 2.0; }
+__global__ void cap_fill(float* b, int n, float v) { int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) b[i]=v; }
+__global__ void cap_read_bw(float* dst, const float* src, int n) { int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) dst[i]=src[i]; }
+
+static int probeBiV100Caps(BiV100Caps* caps, int gpu = 0) {
+    int saved; cudaGetDevice(&saved);
+    cudaSetDevice(gpu);
+    *caps = BI_V100_KNOWN_CAPS;
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, gpu);
+    caps->sm_count = prop.multiProcessorCount;
+    caps->max_threads_per_sm = prop.maxThreadsPerMultiProcessor;
+    caps->shared_mem_per_sm = prop.sharedMemPerMultiprocessor;
+    caps->l2_cache_bytes = prop.l2CacheSize;
+    int* d_warp; cudaMalloc(&d_warp, 4);
+    cap_warp_kernel<<<1,64>>>(d_warp);
+    cudaMemcpy(&caps->warp_size, d_warp, 4, cudaMemcpyDeviceToHost);
+    cudaFree(d_warp);
+    double* d_fp64; cudaMalloc(&d_fp64, 8);
+    cudaMemset(d_fp64, 0, 8);
+    cap_fp64_kernel<<<1,1>>>(d_fp64);
+    double h_fp64 = 0;
+    cudaMemcpy(&h_fp64, d_fp64, 8, cudaMemcpyDeviceToHost);
+    caps->fp64_works = (h_fp64 == 3.0) ? 1 : 0;
+    cudaFree(d_fp64);
+    cudaSetDevice(saved);
+    return 0;
+}
+
+static void printBiV100Caps(const BiV100Caps* c, FILE* out = stdout) {
+    fprintf(out, "BI-V100: warp=%d fp64=%s SMs=%d L2=%dKB\n",
+        c->warp_size, c->fp64_works ? "OK" : "BROKEN", c->sm_count, c->l2_cache_bytes/1024);
+    fprintf(out, "  constraints: SetDevice(src) + blocking stream + stream any device\n");
+}
+}
+
+
 infccl_engine_t infccl_create_engine(int ndev, const int* devlist) {
     auto meta = std::make_shared<TransferMetadata>();
     auto* engine = new TransferEngine(meta);

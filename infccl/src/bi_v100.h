@@ -88,16 +88,6 @@ struct BiV100Constraints {
     }
 };
 
-__global__ void cap_warp_kernel(int* out) { if (threadIdx.x == 0) out[0] = warpSize; }
-__global__ void cap_fp64_kernel(double* out) { out[0] = 1.0 + 2.0; }
-__global__ void cap_fill(float* b, int n, float v) { int i = blockIdx.x*blockDim.x+threadIdx.x; if(i<n) b[i]=v; }
-__global__ void cap_read_bw(float* dst, const float* src, int n) { int i=blockIdx.x*blockDim.x+threadIdx.x; if(i<n) dst[i]=src[i]; }
-
-static inline int probeBiV100Caps(BiV100Caps* caps, int gpu = 0) {
-    int saved; cudaGetDevice(&saved);
-    cudaSetDevice(gpu);
-    *caps = BI_V100_KNOWN_CAPS;
-
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, gpu);
     caps->sm_count = prop.multiProcessorCount;
@@ -175,28 +165,6 @@ static inline int probeBiV100Caps(BiV100Caps* caps, int gpu = 0) {
 
     cudaSetDevice(saved);
     return 0;
-}
-
-static inline void printBiV100Caps(const BiV100Caps* c, FILE* out = stdout) {
-    fprintf(out, "BI-V100 Capabilities:\n");
-    fprintf(out, "  warp_size:        %d\n", c->warp_size);
-    fprintf(out, "  fp64:             %s\n", c->fp64_works ? "OK" : "BROKEN");
-    fprintf(out, "  SMs:              %d\n", c->sm_count);
-    fprintf(out, "  shared/SM:        %d KB\n", c->shared_mem_per_sm / 1024);
-    fprintf(out, "  L2:               %d KB\n", c->l2_cache_bytes / 1024);
-    fprintf(out, "  HBM BW:           %.1f GB/s\n", c->hbm_bw_gbps);
-    fprintf(out, "  peer BW:          %.1f GB/s\n", c->peer_bw_gbps);
-    fprintf(out, "  peer latency:     %.1f us\n", c->peer_latency_us);
-    fprintf(out, "  launch overhead:  %.1f us\n", c->memcpy_launch_overhead_us);
-    fprintf(out, "  CUDA compat:      %d.%d\n", c->cuda_compat_major, c->cuda_compat_minor);
-    fprintf(out, "  Constraints:\n");
-    fprintf(out, "    peer memcpy needs cudaSetDevice(src):  YES\n");
-    fprintf(out, "    peer memcpy needs blocking stream:     YES\n");
-    fprintf(out, "    peer memcpy stream can be any device:  YES\n");
-    fprintf(out, "    P2P kernel write:                      BROKEN\n");
-    fprintf(out, "    IPC cudaFree:                          UNSAFE\n");
-    fprintf(out, "  Recommended slice: %zu KB\n",
-        BiV100Constraints::recommendedSliceBytes(c->peer_bw_gbps, c->memcpy_launch_overhead_us) / 1024);
 }
 
 }
