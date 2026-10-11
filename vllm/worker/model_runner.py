@@ -2020,6 +2020,8 @@ class CUDAGraphRunner(nn.Module):
             self.model(
                 input_ids=input_ids,
                 positions=positions,
+                kv_caches=kv_caches,
+                attn_metadata=attn_metadata,
                 intermediate_tensors=intermediate_inputs,
                 **kwargs,
             )
@@ -2032,6 +2034,8 @@ class CUDAGraphRunner(nn.Module):
             output_hidden_or_intermediate_states = self.model(
                 input_ids=input_ids,
                 positions=positions,
+                kv_caches=kv_caches,
+                attn_metadata=attn_metadata,
                 intermediate_tensors=intermediate_inputs,
                 **kwargs,
             )
