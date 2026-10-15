@@ -618,9 +618,21 @@ fi
 build_stage "patch script completed"
 build_stage "installing ix_fused_moe 7-step pipeline and ex_engine"
 cp ./ix_fused_moe.py "${VLLM_ROOT}/model_executor/models/ix_fused_moe.py"
-if [[ -d "./ex_engine" ]]; then
+# Deploy ex_engine from repo root (Dockerfile COPY puts it at /workspace/ex_engine)
+# or from qwen3_6_scripts/ if it's there. Also copy into site-packages parent.
+if [[ -d "/workspace/ex_engine" ]]; then
+    cp -rf /workspace/ex_engine "${VLLM_ROOT}/../ex_engine"
+    echo "[ok] deployed ex_engine from /workspace/ex_engine"
+elif [[ -d "../ex_engine" ]]; then
+    cp -rf ../ex_engine "${VLLM_ROOT}/../ex_engine"
+    cp -rf ../ex_engine /workspace/ex_engine 2>/dev/null || true
+    echo "[ok] deployed ex_engine from ../ex_engine"
+elif [[ -d "./ex_engine" ]]; then
     cp -rf ./ex_engine "${VLLM_ROOT}/../ex_engine"
     cp -rf ./ex_engine /workspace/ex_engine 2>/dev/null || true
+    echo "[ok] deployed ex_engine from ./ex_engine"
+else
+    echo "[warn] ex_engine directory not found — naive_batched_moe and hot_path patches unavailable"
 fi
 
 # ============================================================================

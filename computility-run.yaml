@@ -8,9 +8,9 @@ command:
     - --served-model-name
     - llm
     - --max-model-len
-    - '131072'
+    - '262144'
     - --gpu-memory-utilization
-    - '0.92'
+    - '0.90'
     - --trust-remote-code
     - -tp
     - '4'
@@ -19,7 +19,7 @@ command:
     - --disable-log-requests
     - --disable-frontend-multiprocessing
     - --max-num-batched-tokens
-    - '4096'
+    - '8192'
     - --enable-chunked-prefill
     - --max-seq-len-to-capture
     - '32768'
@@ -37,19 +37,75 @@ env:
       value: 3600
     - name: VLLM_ENABLE_EXPERT_PARALLEL
       value: 0
-    - name: BI100_MAX_NUM_SEQS
-      value: 2
-    - name: BI100_MOE_COREX_DIRECT_ROUTED
+    - name: VLLM_IMAGE_FETCH_TIMEOUT
+      value: 10
+    # --- xllm fused CUDA kernels (saves ~15ms/step from kernel fusion) ---
+    - name: BI100_XLLM_NORM
       value: 1
+    - name: BI100_XLLM_ACTIVATION
+      value: 1
+    - name: BI100_XLLM_CACHE
+      value: 0
+    - name: BI100_XLLM_ROPE
+      value: 0
+    - name: BI100_XLLM_FUSED_QKNORM_ROPE
+      value: 1
+    # --- MoE optimization flags ---
+    - name: BI100_MOE_XLLM
+      value: 0
+    - name: BI100_MOE_FUSED_ACTIVATION
+      value: 1
+    - name: BI100_MOE_GEMM_GROUPED
+      value: 1
+    - name: BI100_MOE_NAIVE_BATCHED
+      value: 1
+    - name: BI100_MOE_IX_FUSED
+      value: 0
+    - name: BI100_MOE_BATCHED_GEMM
+      value: 0
+    - name: BI100_MOE_COREX_DIRECT_ROUTED
+      value: 0
     - name: BI100_MOE_COREX_TOPK_SOFTMAX
+      value: 0
+    - name: BI100_MOE_COREX_EXACT_REDUCE
+      value: 0
+    - name: BI100_MOE_COREX_INDEX_COMBINE
+      value: 0
+    - name: BI100_MOE_COREX_WEIGHT_GATHER
+      value: 0
+    # --- GDN (GatedDeltaNet) optimization flags ---
+    - name: BI100_GDN_COREX_BETA_DECAY
+      value: 1
+    - name: BI100_GDN_COREX_CAUSAL_CONV
+      value: 1
+    - name: BI100_GDN_COREX_GATED_NORM
       value: 1
     - name: BI100_GDN_COREX_PACKED_DECODE
       value: 1
-    - name: BI100_HYBRID_KV_ACCOUNTING
-      value: full_attention
+    - name: BI100_GDN_COREX_QK_MAP
+      value: 1
     - name: BI100_GDN_CACHE_POLICY
       value: admission64
     - name: BI100_GDN_RESTORE_MODE
       value: hybrid64
-    - name: VLLM_IMAGE_FETCH_TIMEOUT
-      value: 10
+    # --- Hot path & misc ---
+    - name: BI100_HOT_PATH_PATCH
+      value: 0
+    - name: BI100_HP_ACTIVATION
+      value: 0
+    - name: BI100_HP_CACHE
+      value: 1
+    - name: BI100_HP_LINEAR
+      value: 0
+    - name: BI100_HP_NORM
+      value: 0
+    - name: BI100_HP_ROPE
+      value: 0
+    - name: BI100_HP_TOPK
+      value: 0
+    - name: BI100_HYBRID_KV_ACCOUNTING
+      value: full_attention
+    - name: BI100_MAX_NUM_SEQS
+      value: 2
+    - name: BI100_ATTN_COREX_HEAD_RMS_NORM
+      value: 0

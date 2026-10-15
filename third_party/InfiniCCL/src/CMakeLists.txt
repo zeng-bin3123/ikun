@@ -336,6 +336,10 @@ target_include_directories(infiniccl
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/src>
 )
 
+# Ubuntu 20.04 with older ld requires explicit pthread linkage
+find_package(Threads REQUIRED)
+target_link_libraries(infiniccl PRIVATE Threads::Threads)
+
 string(REPLACE ";" ", " PRINT_DEVS "${DEVICE_LIST}")
 string(REPLACE ";" ", " PRINT_BACKS "${BACKEND_LIST}")
 message(STATUS "InfiniCCL Config: Devices [${PRINT_DEVS}] | Backends [${PRINT_BACKS}]")

@@ -2141,19 +2141,22 @@ class Qwen3_5MoeSparseBlock(nn.Module):
             # Diagnostic logging uses .item() (GPU→CPU sync) which is
             # invalid during CUDA Graph capture.  Skip when capturing.
             _ix_cnt = getattr(self, '_ix_diag_cnt', 0)
-            _capturing = torch.cuda.is_current_stream_capturing() if hasattr(torch.cuda, 'is_current_stream_capturing') else False
-            if not _capturing:
+            _capturing = (torch.cuda.is_current_stream_capturing()
+                          if hasattr(torch.cuda, 'is_current_stream_capturing')
+                          else False)
+            # Only do GPU→CPU diagnostic sync for the first few calls.
+            # After warmup, skip entirely to avoid 370μs/call × 40 layers.
+            if not _capturing and _ix_cnt < 5:
                 _in_nan = hidden_states.isnan().any().item()
-                if _ix_cnt < 5 or (_in_nan and _ix_cnt < 200):
-                    self._ix_diag_cnt = _ix_cnt + 1
-                    logger.info(
-                        "[IX_MOE] call=%d T=%d in_nan=%s in_norm=%.4f "
-                        "logits_range=[%.4f,%.4f] w13=%s",
-                        _ix_cnt, hidden_states.shape[0], _in_nan,
-                        hidden_states.float().norm().item() if not _in_nan else -1,
-                        router_logits.min().item() if not _in_nan else -1,
-                        router_logits.max().item() if not _in_nan else -1,
-                        list(w13.shape))
+                self._ix_diag_cnt = _ix_cnt + 1
+                logger.info(
+                    "[IX_MOE] call=%d T=%d in_nan=%s in_norm=%.4f "
+                    "logits_range=[%.4f,%.4f] w13=%s",
+                    _ix_cnt, hidden_states.shape[0], _in_nan,
+                    hidden_states.float().norm().item() if not _in_nan else -1,
+                    router_logits.min().item() if not _in_nan else -1,
+                    router_logits.max().item() if not _in_nan else -1,
+                    list(w13.shape))
             out = _ix_fused_moe.fused_moe_forward(
                 hidden_states, router_logits.float(),
                 w13, w2,
