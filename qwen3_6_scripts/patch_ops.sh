@@ -1,3 +1,42 @@
+# ============================================================================
+# RUNTIME REFERENCE — vllm on BI-V100 (4-card or 2-card)
+#
+# Full 4-card (if GPU P2P all pass):
+#   cd /home/ikun
+#   export CUDA_VISIBLE_DEVICES="0,1,2,3"
+#   export VLLM_ENGINE_ITERATION_TIMEOUT_S=3600
+#   export VLLM_ENABLE_EXPERT_PARALLEL=0 VLLM_IMAGE_FETCH_TIMEOUT=10
+#   export BI100_XLLM_NORM=1 BI100_XLLM_ACTIVATION=1 BI100_XLLM_CACHE=0
+#   export BI100_XLLM_ROPE=0 BI100_XLLM_FUSED_QKNORM_ROPE=1
+#   export BI100_MOE_XLLM=0 BI100_MOE_FUSED_ACTIVATION=1
+#   export BI100_MOE_GEMM_GROUPED=1 BI100_MOE_NAIVE_BATCHED=1
+#   export BI100_MOE_IX_FUSED=0 BI100_MOE_BATCHED_GEMM=0
+#   export BI100_MOE_COREX_DIRECT_ROUTED=0 BI100_MOE_COREX_TOPK_SOFTMAX=0
+#   export BI100_MOE_COREX_EXACT_REDUCE=0 BI100_MOE_COREX_INDEX_COMBINE=0
+#   export BI100_MOE_COREX_WEIGHT_GATHER=0
+#   export BI100_HOT_PATH_PATCH=0 BI100_HP_ACTIVATION=0 BI100_HP_CACHE=1
+#   export BI100_HP_LINEAR=0 BI100_HP_NORM=0 BI100_HP_ROPE=0 BI100_HP_TOPK=0
+#   export BI100_GDN_CACHE_POLICY=admission64 BI100_GDN_RESTORE_MODE=hybrid64
+#   export BI100_GDN_COREX_BETA_DECAY=1 BI100_GDN_COREX_CAUSAL_CONV=1
+#   export BI100_GDN_COREX_GATED_NORM=1 BI100_GDN_COREX_PACKED_DECODE=1
+#   export BI100_GDN_COREX_QK_MAP=1
+#   export BI100_HYBRID_KV_ACCOUNTING=full_attention
+#   export BI100_MAX_NUM_SEQS=2 BI100_ATTN_COREX_HEAD_RMS_NORM=0
+#   python3 -m vllm.entrypoints.openai.api_server \
+#     --model /tmp/model --port 1111 --served-model-name llm \
+#     --max-model-len 262144 --trust-remote-code -tp 4 \
+#     --gpu-memory-utilization 0.90 --max-num-seqs 2 \
+#     --disable-log-requests --disable-frontend-multiprocessing \
+#     --max-num-batched-tokens 8192 --enable-chunked-prefill \
+#     --enable-prefix-caching --max-seq-len-to-capture 32768 \
+#     --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+#     --reasoning-parser qwen3 2>&1 | tee /tmp/vllm_server.log
+#
+# 2-card fallback (if GPU 0,3 fail P2P):
+#   export CUDA_VISIBLE_DEVICES="1,2"
+#   (same env vars above, but -tp 2 and --gpu-memory-utilization 0.95)
+#   (may need to trim model or reduce --max-model-len to avoid OOM)
+# ============================================================================
 echo "[build] trigger 20260901"
 echo "[build] trigger 202609011237"
 echo "[build] trigger 202609011636"
@@ -583,3 +622,43 @@ if [[ -d "./ex_engine" ]]; then
     cp -rf ./ex_engine "${VLLM_ROOT}/../ex_engine"
     cp -rf ./ex_engine /workspace/ex_engine 2>/dev/null || true
 fi
+
+# ============================================================================
+# RUNTIME REFERENCE — vllm on BI-V100 (4-card or 2-card)
+#
+# Full 4-card (if GPU P2P all pass):
+#   cd /home/ikun
+#   export CUDA_VISIBLE_DEVICES="0,1,2,3"
+#   export VLLM_ENGINE_ITERATION_TIMEOUT_S=3600
+#   export VLLM_ENABLE_EXPERT_PARALLEL=0 VLLM_IMAGE_FETCH_TIMEOUT=10
+#   export BI100_XLLM_NORM=1 BI100_XLLM_ACTIVATION=1 BI100_XLLM_CACHE=0
+#   export BI100_XLLM_ROPE=0 BI100_XLLM_FUSED_QKNORM_ROPE=1
+#   export BI100_MOE_XLLM=0 BI100_MOE_FUSED_ACTIVATION=1
+#   export BI100_MOE_GEMM_GROUPED=1 BI100_MOE_NAIVE_BATCHED=1
+#   export BI100_MOE_IX_FUSED=0 BI100_MOE_BATCHED_GEMM=0
+#   export BI100_MOE_COREX_DIRECT_ROUTED=0 BI100_MOE_COREX_TOPK_SOFTMAX=0
+#   export BI100_MOE_COREX_EXACT_REDUCE=0 BI100_MOE_COREX_INDEX_COMBINE=0
+#   export BI100_MOE_COREX_WEIGHT_GATHER=0
+#   export BI100_HOT_PATH_PATCH=0 BI100_HP_ACTIVATION=0 BI100_HP_CACHE=1
+#   export BI100_HP_LINEAR=0 BI100_HP_NORM=0 BI100_HP_ROPE=0 BI100_HP_TOPK=0
+#   export BI100_GDN_CACHE_POLICY=admission64 BI100_GDN_RESTORE_MODE=hybrid64
+#   export BI100_GDN_COREX_BETA_DECAY=1 BI100_GDN_COREX_CAUSAL_CONV=1
+#   export BI100_GDN_COREX_GATED_NORM=1 BI100_GDN_COREX_PACKED_DECODE=1
+#   export BI100_GDN_COREX_QK_MAP=1
+#   export BI100_HYBRID_KV_ACCOUNTING=full_attention
+#   export BI100_MAX_NUM_SEQS=2 BI100_ATTN_COREX_HEAD_RMS_NORM=0
+#   python3 -m vllm.entrypoints.openai.api_server \
+#     --model /tmp/model --port 1111 --served-model-name llm \
+#     --max-model-len 262144 --trust-remote-code -tp 4 \
+#     --gpu-memory-utilization 0.90 --max-num-seqs 2 \
+#     --disable-log-requests --disable-frontend-multiprocessing \
+#     --max-num-batched-tokens 8192 --enable-chunked-prefill \
+#     --enable-prefix-caching --max-seq-len-to-capture 32768 \
+#     --enable-auto-tool-choice --tool-call-parser qwen3_coder \
+#     --reasoning-parser qwen3 2>&1 | tee /tmp/vllm_server.log
+#
+# 2-card fallback (if GPU 0,3 fail P2P):
+#   export CUDA_VISIBLE_DEVICES="1,2"
+#   (same env vars above, but -tp 2 and --gpu-memory-utilization 0.95)
+#   (may need to trim model or reduce --max-model-len to avoid OOM)
+# ============================================================================
