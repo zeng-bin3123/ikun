@@ -14,6 +14,8 @@
 \usepackage{xcolor}
 \usepackage{tcolorbox}
 \usepackage{caption}
+\usepackage{tikz}
+\usetikzlibrary{automata,positioning,arrows.meta}
 
 \geometry{margin=2.2cm,top=2.5cm,bottom=2.5cm}
 
@@ -33,6 +35,7 @@
 \theoremstyle{definition}
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{axiom}[theorem]{Axiom}
+\newtheorem{example}[theorem]{Example}
 
 \theoremstyle{remark}
 \newtheorem{remark}[theorem]{Remark}
@@ -42,10 +45,13 @@
 \newcommand{\Prob}{\mathbb{P}}
 \newcommand{\Real}{\mathbb{R}}
 \newcommand{\Nat}{\mathbb{N}}
+\newcommand{\Ind}{\mathbb{1}}
 \newcommand{\cmark}{\textcolor{green!60!black}{\checkmark}}
 
 \definecolor{commitblue}{RGB}{30,80,150}
 \definecolor{codegray}{RGB}{245,245,248}
+\definecolor{theoremgreen}{RGB}{20,110,50}
+\definecolor{corollaryorange}{RGB}{180,90,20}
 
 \newtcolorbox{commitbox}[1]{
   colback=codegray,
@@ -54,6 +60,15 @@
   fonttitle=\small\bfseries,
   boxrule=0.5pt,
   left=4pt,right=4pt,top=2pt,bottom=2pt
+}
+
+\newtcolorbox{codeline}[1]{
+  colback=codegray,
+  colframe=black!30,
+  title={\small Code Lines: \texttt{#1}},
+  fonttitle=\small,
+  boxrule=0.3pt,
+  left=3pt,right=3pt,top=1pt,bottom=1pt
 }
 
 \pagestyle{fancy}
@@ -69,10 +84,11 @@
   \textbf{of Distributed KVCache Transfer Engine Optimizations}\\[4pt]
   \textbf{for Iluvatar BI-V100 Inference Clusters}\\[12pt]
   \large{Commit-level Code $\longleftrightarrow$ Theorem Correspondence}\\[4pt]
-  \large{across 2681 Mooncake Commits and 1589 NCCL Commits}
+  \large{across 2417 Mooncake Commits and 1589 NCCL Commits}\\[8pt]
+  \normalsize{Version 2.0 --- Extended Edition with 24 Chapters, 42 Theorems}
 }
 \author{
-  Automated Mathematical Extraction\\
+  Automated Mathematical Extraction Engine\\
   \texttt{zeng-bin3123/ikun} $\cdot$ \texttt{kvcache-ai/Mooncake} $\cdot$ \texttt{NVIDIA/nccl}
 }
 \date{October 15, 2026}
@@ -84,26 +100,41 @@
 
 \begin{abstract}
 This document provides an exhaustive mathematical formalization of every key optimization
-technique identified across the Mooncake project's 2681 commits, mapped to formal theorems,
+technique identified across the Mooncake project's 2417 commits, mapped to formal theorems,
 lemmas, and proofs.  Each theorem is anchored to specific commit hashes and the corresponding
-code lines that implement the mathematical structure.  The purpose is twofold: (1)~to establish
-the theoretical upper bounds and complexity guarantees underlying \texttt{infccl}---the Iluvatar
-BI-V100 Inference Collective Communication Library; and (2)~to provide a rigorous reference
-for extending these results to the CUDA-10.2-constrained PCIe topology of 4$\times$BI-V100 nodes.
+code lines that implement the mathematical structure.  The purpose is threefold:
+(1)~to establish the theoretical upper bounds and complexity guarantees underlying
+\texttt{infccl}---the Iluvatar BI-V100 Inference Collective Communication Library;
+(2)~to provide a rigorous reference for extending these results to the CUDA-10.2-constrained
+PCIe topology of 4$\times$BI-V100 nodes; and
+(3)~to serve as the product engineering specification from which individual infccl features
+can be implemented with provable correctness guarantees.
 
-The document is organized into 12 major chapters covering: prefill cost models, amortized
-CQE signaling, string interning for RDMA paths, mutex coalescing, bounded-queue admission
-control, topology-aware placement, deadline-aware bandwidth arbitration, KVCache-centric
-scheduling, chunked pipeline parallelism, cache eviction theory, replication consistency,
-and the dispatch overhead dominance on PCIe-only architectures.
+This second edition expands the original 15-section document to 24 chapters covering:
+prefill cost models, amortized CQE signaling, string interning for RDMA paths, mutex
+coalescing, bounded-queue admission control, topology-aware placement, deadline-aware
+bandwidth arbitration, earliest-deadline-first scheduling, deadline-infeasible degradation,
+EWMA bandwidth estimation, Count-Min Sketch frequency admission, half-open rail state
+machine, credit-based flow control, lock-free arena allocation, multi-tenant quota systems,
+KVCache-centric scheduling, chunked pipeline parallelism, cache eviction theory,
+replication consistency, chunked memory registration, dispatch overhead dominance,
+AllReduce coalescing, causal chain latency decomposition, and the unified infccl model.
+
+Total: 42 theorems, 18 lemmas, 12 corollaries, 15 definitions across 60+ commit
+correspondences.
 \end{abstract}
 
 \tableofcontents
 \newpage
 
+
 %% ============================================================================
+%% PART I: COST MODELS AND FOUNDATIONAL THEORY
+%% ============================================================================
+
+\part{Cost Models and Foundational Theory}
+
 %% CHAPTER 1: PREFILL COST MODEL
-%% ============================================================================
 \section{Prefill Cost Model and KVCache Reuse Benefit}
 \label{sec:prefill-cost}
 
@@ -166,33 +197,43 @@ Since BI-V100 has only PCIe P2P (no NVLink/IB), the inter-GPU bandwidth
 $B \leq 16$~GB/s sets a hard constraint on maximum reusable prefix length.
 \end{corollary}
 
-\begin{remark}[Application to infccl]
-The infccl library's \texttt{CUSTOM\_AR\_THRESHOLD = 8\,388\,608} bytes ($8$~MB) threshold
-delineates when custom P2P allreduce (below 8~MB) outperforms NCCL's ring/tree protocol.
-This threshold is derived from the crossover point where the latency-dominated PCIe P2P
-path beats the bandwidth-dominated NCCL path.
-\end{remark}
 
 %% ============================================================================
-%% CHAPTER 2: AMORTIZED CQE SIGNALING
+%% PART II: RDMA TRANSPORT OPTIMIZATIONS
 %% ============================================================================
+
+\part{RDMA Transport Optimizations}
+
+%% CHAPTER 2: AMORTIZED CQE SIGNALING
 \section{Amortized Completion Queue Signaling}
 \label{sec:amortized-cqe}
 
 \begin{commitbox}{559f83cb --- [TransferEngine] Signal only every N RDMA WRs using a per-QP
 completion FIFO}
-\textbf{Files:} \texttt{rdma\_posted\_fifo.h}, \texttt{rdma\_endpoint.cpp}, \texttt{worker\_pool.cpp}\\
-\textbf{Key code:} \texttt{rdmaSignalPeriod(interval, max\_wr)} returns
-$k = \max(1, \min(\text{interval}, \lfloor\text{max\_wr}/2\rfloor))$.\\
+\textbf{Files:} \texttt{rdma\_posted\_fifo.h}, \texttt{rdma\_endpoint.h/cpp}, \texttt{config.h}\\
+\textbf{Key code:} \texttt{GlobalConfig::rdma\_signal\_interval} (default 1).
 \texttt{shouldSignalRdmaWr(index, wr\_count, period)} returns true iff
-$(i+1) \bmod k = 0$ or $i+1 = \text{wr\_count}$.
+$(i+1) \bmod k = 0$ or $i+1 = \text{wr\_count}$. New method
+\texttt{collectPostedCompletions()} retires every WR up to the signaled one via per-QP
+\texttt{posted\_fifo\_} (a \texttt{std::deque<Slice*>}).
 \end{commitbox}
+
+\begin{codeline}{config.h:60--63, rdma\_endpoint.h:187--193, rdma\_posted\_fifo.h:1--60}
+\texttt{int rdma\_signal\_interval = 1;} --- configurable via \texttt{MC\_RDMA\_SIGNAL\_INTERVAL}.\\
+\texttt{std::vector<std::deque<Transport::Slice*>> posted\_fifo\_;} --- one FIFO per QP.\\
+\texttt{size\_t collectPostedCompletions(Slice* completed, vector<Slice*>\& out);} --- CQE retirement.
+\end{codeline}
 
 \begin{definition}[RDMA Completion Queue Entry (CQE) Model]
 \label{def:cqe-model}
 An RDMA Send Queue (SQ) of depth $W$ posts Work Requests (WRs).  Each signaled WR
 generates one CQE upon completion.  The CQ has finite depth $C$.  Standard practice
-signals every WR, giving a 1:1 CQE-to-WR ratio.
+signals every WR, giving a 1:1 CQE-to-WR ratio.  We define:
+\begin{itemize}[nosep]
+  \item $N$: total WRs in a posting chain
+  \item $k$: signal period, i.e., one CQE per $k$ WRs
+  \item $W$: SQ depth (from \texttt{ibv\_create\_qp} \texttt{cap.max\_send\_wr})
+\end{itemize}
 \end{definition}
 
 \begin{theorem}[CQE Reduction Factor under Amortized Signaling]
@@ -214,7 +255,7 @@ The CQE reduction factor is:
 \end{theorem}
 
 \begin{proof}
-The signaling predicate from the code is:
+The signaling predicate from \texttt{shouldSignalRdmaWr} is:
 \[
   \text{signal}(i) \;=\; \bigl[(i+1) \bmod k = 0\bigr] \;\lor\; \bigl[i+1 = N\bigr]
 \]
@@ -222,32 +263,44 @@ Counting: indices $\{k-1, 2k-1, \ldots, \lfloor N/k\rfloor \cdot k - 1\}$ satisf
 modular condition, giving $\lfloor N/k \rfloor$ CQEs.  If $N$ is not a multiple of $k$,
 the chain tail at index $N-1$ adds one more CQE.  The bound $\lceil N/k \rceil$ follows.
 
-The constraint $k \leq \lfloor W/2 \rfloor$ from \texttt{rdmaSignalPeriod} ensures that
+The constraint $k \leq \lfloor W/2 \rfloor$ from the commit's
+``\textit{half-SQ signal period as pipeline, not deadlock}'' comment ensures that
 the SQ is freed in at most two batches: the first signaled WR retires $k$ slots,
-leaving $\leq W - k \geq W/2$ slots for subsequent posts before the next CQE arrives.
-This prevents SQ starvation (a form of pipeline deadlock).
+leaving $\geq W/2$ slots for subsequent posts before the next CQE arrives.
 \end{proof}
 
 \begin{lemma}[SQ Occupancy Bound]
 \label{lem:sq-occupancy}
 With signal period $k \leq \lfloor W/2 \rfloor$, the maximum number of in-flight
-(unretired) WRs at any point is bounded by:
-\begin{equation}
-  W_{\text{inflight}} \;\leq\; W - \left\lfloor \frac{W}{2k} \right\rfloor \cdot k
-  \;\leq\; W
-\end{equation}
-and the pipeline never stalls provided the CQ polling thread processes each CQE before
-$k$ new WRs accumulate.
+(unretired) WRs at any point is bounded by $W$, and the pipeline never stalls provided
+the CQ polling thread processes each CQE before $k$ new WRs accumulate.
 \end{lemma}
 
 \begin{proof}
-Each CQE retires exactly $k$ WRs from the FIFO (\texttt{collectPostedFifo} in
-\texttt{rdma\_posted\_fifo.h}).  Since the tail of each chain is always signaled, the
-SQ depth returns to 0 after at most $\lceil N/k \rceil$ poll cycles.  The SQ capacity $W$
-allows $\lfloor W/k \rfloor$ unsignaled bursts before the first CQE must be polled.
-Setting $k \leq W/2$ guarantees $\lfloor W/k \rfloor \geq 2$, so at least two full
-bursts can be posted before any CQE is required.
+Each CQE retires exactly $k$ WRs from the FIFO (\texttt{collectPostedCompletions}).
+Since the tail of each chain is always signaled, the SQ depth returns to 0 after at most
+$\lceil N/k \rceil$ poll cycles.  The SQ capacity $W$ allows $\lfloor W/k \rfloor$
+unsignaled bursts before the first CQE must be polled.  Setting $k \leq W/2$ guarantees
+$\lfloor W/k \rfloor \geq 2$, so at least two full bursts can be posted before any
+CQE is required.
 \end{proof}
+
+\begin{lemma}[Flushed WR Error Propagation]
+\label{lem:flush-err}
+When a QP enters error state, all subsequent unsignaled WRs are flushed with
+\texttt{WR\_FLUSH\_ERR}. The posted FIFO marks the prefix before the first error CQE as
+\texttt{SUCCESS} (RC in-order guarantee) and the remainder as \texttt{FLUSH\_ERR}:
+\begin{equation}
+  \text{status}(WR_j) =
+  \begin{cases}
+    \text{SUCCESS} & j < j_{\text{error}} \\
+    \text{ERROR} & j = j_{\text{error}} \\
+    \text{FLUSH\_ERR} & j > j_{\text{error}}
+  \end{cases}
+\end{equation}
+This is sound because InfiniBand RC QPs guarantee in-order completion: if WR $j_{\text{error}}$
+failed, all WRs $j < j_{\text{error}}$ have already completed successfully on the wire.
+\end{lemma}
 
 \begin{remark}[BI-V100 Application]
 On BI-V100's PCIe P2P path, the ``RDMA'' equivalent is CUDA IPC memory copies.
@@ -258,9 +311,7 @@ The \texttt{INFCCL\_BATCH\_BARRIER} environment variable controls this parameter
 \end{remark}
 
 
-%% ============================================================================
-%% CHAPTER 3: STRING INTERNING FOR RDMA PATHS
-%% ============================================================================
+%% CHAPTER 3: STRING INTERNING
 \section{String Interning Complexity Reduction}
 \label{sec:string-intern}
 
@@ -269,9 +320,16 @@ slice mapping}
 \textbf{Files:} \texttt{transfer\_metadata.h/cpp}, \texttt{transport.h},
 \texttt{worker\_pool.cpp}\\
 \textbf{Key code:} Process-lifetime \texttt{unordered\_map<string, unique\_ptr<string>>}
-intern pool; \texttt{Slice::interned\_peer\_nic\_path} pointer replaces per-slice
-\texttt{string} allocation.
+intern pool. \texttt{Slice::interned\_peer\_nic\_path} pointer replaces per-slice
+\texttt{string} allocation. \texttt{peerNicPath()} returns the interned reference.
 \end{commitbox}
+
+\begin{codeline}{transfer\_metadata.cpp:36--50}
+\texttt{const std::string* internNicPath(const std::string\& path)} ---
+$\BigO(1)$ amortized lookup in \texttt{unordered\_map}, returns stable pointer.\\
+\texttt{submitPostSend} previously concatenated \texttt{server@nic} per-slice; now uses
+pointer from \texttt{decodeSegmentDesc}.
+\end{codeline}
 
 \begin{theorem}[String Interning Complexity Reduction]
 \label{thm:string-intern}
@@ -290,18 +348,21 @@ $\Theta(1)$ (pointer dereference).
 \end{theorem}
 
 \begin{proof}
-The intern pool (\texttt{InternNicPath}) uses an \texttt{unordered\_map} with amortized
-$\BigO(1)$ lookup per insertion.  Since $|\mathcal{P}| = O(\text{peers} \times \text{NICs})$
-is bounded by the cluster topology (typically $\leq 10^3$), the pool is populated in
-$\BigO(|\mathcal{P}| \cdot \ell)$ time during \texttt{decodeSegmentDesc} and
-\texttt{addLocalSegment}.  Each slice's \texttt{interned\_peer\_nic\_path} is a raw pointer
-into the pool (never freed during process lifetime), so assignment and comparison are
-$\Theta(1)$ operations.
+The intern pool uses an \texttt{unordered\_map} with amortized $\BigO(1)$ lookup.
+Since $|\mathcal{P}| = O(\text{peers} \times \text{NICs})$ is bounded by the cluster
+topology (typically $\leq 10^3$), the pool is populated in
+$\BigO(|\mathcal{P}| \cdot \ell)$ time during \texttt{decodeSegmentDesc}.
+Each slice's \texttt{interned\_peer\_nic\_path} is a raw pointer into the pool
+(never freed during process lifetime), so assignment and comparison are $\Theta(1)$.
 
-The critical hot-path savings occur in \texttt{WorkerPool::enqueuePreparedSlices} (commit
-\texttt{675ca5c6}), where the batched enqueue groups slices by owner thread using
-\texttt{peerNicPath()} which now returns a reference to the interned string rather than
-constructing a temporary.
+The critical hot-path savings occur in \texttt{WorkerPool::enqueuePreparedSlices}
+(commit \texttt{675ca5c6}), where batched enqueue groups slices by owner thread
+using \texttt{peerNicPath()} which now returns a reference to the interned string.
+
+\textbf{Generalization} (commit \texttt{12369c0e}): \texttt{TenantIdRef} applies
+the same interning pattern to tenant identifiers in the Store, reducing
+\texttt{NormalizeTenantIdRef()} from $\Theta(\ell)$ string copy to $\Theta(1)$
+pointer comparison.
 \end{proof}
 
 \begin{corollary}[Memory Bound]
@@ -310,15 +371,11 @@ The intern pool's total memory is bounded by:
   M_{\text{pool}} \;\leq\; |\mathcal{P}| \cdot (\ell + C_{\text{hash}} + C_{\text{ptr}})
   \;\approx\; |\mathcal{P}| \cdot (\ell + 64)\ \text{bytes}
 \end{equation}
-where $C_{\text{hash}} \approx 56$ bytes (\texttt{unordered\_map} node overhead) and
-$C_{\text{ptr}} = 8$ bytes.  For a cluster with 100 peers $\times$ 8 NICs and
-$\ell = 40$, this is $\approx 83$~KB---negligible.
+For a cluster with 100 peers $\times$ 8 NICs, $\ell = 40$: $\approx 83$~KB---negligible.
 \end{corollary}
 
 
-%% ============================================================================
 %% CHAPTER 4: MUTEX COALESCING
-%% ============================================================================
 \section{Mutex Coalescing and Batched Enqueue}
 \label{sec:mutex-coalesce}
 
@@ -327,9 +384,14 @@ enqueue and rail count}
 \textbf{Files:} \texttt{worker\_pool.h/cpp}\\
 \textbf{Key code:} \texttt{enqueuePreparedSlices} groups slices into
 \texttt{vector<SliceList> by\_owner(worker\_count\_)} and calls
-\texttt{enqueueSlicesToOwner(owner, slices)} once per worker, taking
-\texttt{worker\_slice\_queue\_lock\_[owner]} exactly once per non-empty group.
+\texttt{enqueueSlicesToOwner(owner, slices)} once per non-empty group.
 \end{commitbox}
+
+\begin{codeline}{worker\_pool.cpp:250--268, worker\_pool.h:159--163}
+\texttt{void enqueueSlicesToOwner(int owner\_thread, const SliceList\& slices)} ---
+acquires \texttt{worker\_slice\_queue\_lock\_[owner]} once for entire batch.\\
+\texttt{std::atomic<int> paused\_rail\_count\_\{0\}} --- fast-path rail check.
+\end{codeline}
 
 \begin{theorem}[Mutex Coalescing Speedup]
 \label{thm:mutex-coalesce}
@@ -347,8 +409,6 @@ With coalescing, the lock is acquired once per non-empty worker group:
 The speedup ratio is:
 \begin{equation}
   S \;=\; \frac{T_{\text{serial}}}{T_{\text{coalesced}}}
-  \;\approx\; \frac{n}{w} \cdot \frac{\alpha_{\text{lock}}}
-  {\alpha_{\text{lock}} + (n/w) \cdot \alpha_{\text{enqueue}}}
   \;\approx\; \frac{n}{w}
   \quad\text{when } \alpha_{\text{lock}} \gg \alpha_{\text{enqueue}}
   \label{eq:mutex-speedup}
@@ -358,58 +418,59 @@ The speedup ratio is:
 \begin{proof}
 The grouping pass is $\Theta(n)$ with no synchronization.
 Each \texttt{enqueueSlicesToOwner} call acquires \texttt{worker\_slice\_queue\_lock\_[owner]}
-once, then iterates through the group's slices, sorting into per-path sub-queues.
-The lock overhead $\alpha_{\text{lock}}$ includes the \texttt{pthread\_mutex\_lock} syscall
-(or futex), which on contended paths costs 200--2000~ns.  The enqueue operation
-$\alpha_{\text{enqueue}} \approx 10$--50~ns (a \texttt{push\_back} to a
-\texttt{deque<Slice*>}).  Thus for typical $n/w \geq 10$, the lock overhead dominates
-and the speedup $\approx n/w$.
+once.  The lock overhead $\alpha_{\text{lock}} \approx 200$--$2000$~ns (futex).
+The enqueue $\alpha_{\text{enqueue}} \approx 10$--$50$~ns (\texttt{push\_back}).
+For typical $n/w \geq 10$, lock overhead dominates: $S \approx n/w$.
 \end{proof}
 
 \begin{lemma}[Atomic Rail Count Fast Path]
 \label{lem:rail-count}
-The commit also introduces \texttt{paused\_rail\_count\_} (atomic integer).
-The hot-path check \texttt{isRailAvailable(path)} skips the mutex when
-the atomic is zero:
+The \texttt{paused\_rail\_count\_} atomic allows the hot-path \texttt{isRailAvailable()}
+to skip the mutex when no rails are paused:
 \begin{equation}
   T_{\text{rail\_check}} \;=\;
   \begin{cases}
-    \alpha_{\text{atomic\_load}} \approx 5\text{ns} & \text{if no rails paused}\\
+    \alpha_{\text{atomic\_load}} \approx 5\,\text{ns} & \text{if no rails paused}\\
     \alpha_{\text{lock}} + \alpha_{\text{scan}} & \text{if any rail paused}
   \end{cases}
 \end{equation}
-Since rail pauses are rare events (error recovery), the expected cost is
-$\Expect[T_{\text{rail\_check}}] \approx \alpha_{\text{atomic\_load}} = \Theta(1)$.
+Since rail pauses are rare (error recovery), $\Expect[T_{\text{rail\_check}}] = \Theta(1)$.
 \end{lemma}
 
 
 %% ============================================================================
-%% CHAPTER 5: ADMISSION CONTROL / BOUNDED QUEUE
+%% PART III: ADMISSION CONTROL AND SCHEDULING THEORY
 %% ============================================================================
+
+\part{Admission Control and Scheduling Theory}
+
+%% CHAPTER 5: BOUNDED QUEUE ADMISSION CONTROL
 \section{Bounded Queue Admission Control}
 \label{sec:admission}
 
 \begin{commitbox}{0531a521 --- [TE] Bound pooled TCP admission by queued bytes}
 \textbf{Files:} \texttt{tcp\_transport.h}, \texttt{tcp\_transport\_lane\_impl.h}\\
 \textbf{Key code:} \texttt{hasQueuedByteCapacityLocked(group, length)} checks
-\texttt{length $\leq$ capacity \&\& admitted\_bytes $\leq$ capacity $-$ length};
-\texttt{addAdmittedBytesLocked / removeAdmittedBytesLocked} maintain the counter.
+\texttt{length $\leq$ capacity \&\& admitted\_bytes $\leq$ capacity $-$ length}.
 \end{commitbox}
+
+\begin{codeline}{tcp\_transport\_lane\_impl.h:146--170}
+\texttt{bool hasQueuedByteCapacityLocked(size\_t group, size\_t length)} ---
+byte-level admission gate.\\
+\texttt{addAdmittedBytesLocked / removeAdmittedBytesLocked} --- counter maintenance.
+\end{codeline}
 
 \begin{theorem}[M/M/1/K Bounded Queue Delay]
 \label{thm:mm1k}
-Model the TCP transport as an M/M/1/K queue with arrival rate $\lambda$ (bytes/s),
-service rate $\mu$ (bytes/s per lane), $c$ lanes, and byte capacity $K$.
+Model the TCP transport as an M/M/1/K queue with arrival rate $\lambda$,
+service rate $\mu$ per lane, $c$ lanes, and byte capacity $K$.
 The traffic intensity is $\rho = \lambda / (c\mu)$.  The blocking probability is:
 \begin{equation}
   P_{\text{block}} \;=\;
   \frac{(1-\rho)\,\rho^K}{1-\rho^{K+1}}
   \label{eq:blocking-prob}
 \end{equation}
-The effective throughput is:
-\begin{equation}
-  \lambda_{\text{eff}} \;=\; \lambda\,(1 - P_{\text{block}})
-\end{equation}
+The effective throughput is $\lambda_{\text{eff}} = \lambda(1 - P_{\text{block}})$.
 The mean queue length (in bytes) is:
 \begin{equation}
   L \;=\; \frac{\rho}{1-\rho} - \frac{(K+1)\rho^{K+1}}{1-\rho^{K+1}}
@@ -420,32 +481,490 @@ The mean queue length (in bytes) is:
 Standard M/M/1/K result from birth-death process with state space $\{0,1,\ldots,K\}$,
 birth rate $\lambda$ (when state $< K$), death rate $c\mu$.  The steady-state probabilities
 are $\pi_j = \pi_0 \rho^j$ with normalization $\sum_{j=0}^K \pi_j = 1$, giving
-$\pi_0 = (1-\rho)/(1-\rho^{K+1})$ for $\rho \neq 1$.  The blocking probability is
-$\pi_K$.  The implementation's \texttt{queued\_byte\_capacity} is exactly $K$, and the
-admission check \texttt{hasQueuedByteCapacityLocked} is the blocking predicate.
+$\pi_0 = (1-\rho)/(1-\rho^{K+1})$ for $\rho \neq 1$.  The blocking probability is $\pi_K$.
+The implementation's \texttt{queued\_byte\_capacity} is exactly $K$.
 \end{proof}
 
-\begin{remark}[Back-pressure on BI-V100 PCIe]
-For infccl on BI-V100, the TCP transport is not used (all communication is intra-node
-via PCIe), but the M/M/1/K model applies to the CUDA IPC staging buffer pool.
-The \texttt{INFCCL\_MAX\_STAGING = 16777216} (16~MB) sets $K$, and the P2P copy
-bandwidth $\mu \approx 16$~GB/s per direction.  The queuing delay bounds the latency
-tail for the custom allreduce's staging phase.
-\end{remark}
+
+\subsection{Handshake Daemon Queue Bound}
+
+\begin{commitbox}{38ee4194 --- [Bugfix][TransferEngine] Bound the handshake daemon's
+pending-notify queue}
+Bounds the \texttt{pending\_notify} queue to prevent unbounded memory growth when peers
+are slow to respond.
+\end{commitbox}
+
+\begin{corollary}[Handshake Queue Stability]
+\label{cor:handshake-bound}
+The handshake daemon's notify queue is also an instance of the M/M/1/K model with
+$K = $ \texttt{max\_pending\_notifications}. By Theorem~\ref{thm:mm1k}, the queue
+memory is bounded by $K \cdot O(\text{notification\_size})$ and the steady-state
+blocking probability prevents unbounded growth under sustained peer storms.
+\end{corollary}
+
+
+%% CHAPTER 6: EDF SCHEDULING IN ADMISSION QUEUE
+\section{Earliest-Deadline-First Dispatch}
+\label{sec:edf}
+
+\begin{commitbox}{84b2d91c --- [TENT] Opt-in earliest-deadline-first dispatch in admission
+queue (RFC \#2519 step 2)}
+\textbf{Files:} \texttt{admission\_queue.h/cpp}\\
+\textbf{Key code:} When \texttt{QueueLimits::deadline\_aware} is true,
+\texttt{tryAdmit} inserts owners at their EDF position via \texttt{upper\_bound}
+(FIFO tie-break for same deadline). \texttt{pickForDispatch} consumes from the front.
+\end{commitbox}
+
+\begin{codeline}{admission\_queue.cpp:27--33}
+\texttt{inline uint64\_t deadlineKey(uint64\_t deadline\_ns)} ---
+owners without deadline ($0$) sort after all deadlined owners.\\
+\texttt{tryAdmit}: ordered insert via \texttt{std::upper\_bound} when \texttt{deadline\_aware}.\\
+\texttt{pickForDispatch}: $O(\text{picked})$ from front, no sort needed.
+\end{codeline}
+
+\begin{definition}[EDF Scheduling Problem]
+\label{def:edf}
+Given $n$ transfer owners, each with data size $w_i$ bytes, deadline $d_i$, and
+arrival time $a_i$, the EDF policy dispatches in order of non-decreasing $d_i$,
+breaking ties by FIFO (arrival order).
+\end{definition}
+
+\begin{theorem}[EDF Optimality for Deadline Minimization]
+\label{thm:edf-optimal}
+Among all non-preemptive scheduling policies on a single shared resource,
+EDF minimizes the maximum lateness $L_{\max} = \max_i (C_i - d_i)$ where $C_i$
+is the completion time of owner $i$.  On the TENT admission queue with
+\texttt{deadline\_aware = true}:
+\begin{equation}
+  L_{\max}^{\text{EDF}} \;\leq\; L_{\max}^{\pi}
+  \quad\forall\,\text{non-preemptive } \pi
+\end{equation}
+\end{theorem}
+
+\begin{proof}
+Classical result (Jackson 1955, Horn 1974). Consider any schedule $\pi$ and two
+adjacent tasks $i, j$ where $d_i > d_j$ but $i$ is scheduled before $j$. Swapping
+them does not increase $L_{\max}$: the lateness of $j$ decreases by $p_i$
+(processing time of $i$), while the lateness of $i$ increases by $p_j$, but since
+$d_i > d_j$, the new lateness of $i$ is still bounded by the old lateness of $j$.
+By iterating adjacent swaps, any schedule can be transformed to EDF without
+increasing $L_{\max}$.
+
+\textbf{Implementation complexity.} The commit's initial version used
+\texttt{std::stable\_sort} in \texttt{pickForDispatch}: $O(N \log N)$ per dispatch call.
+The subsequent refinement moves to ordered insertion in \texttt{tryAdmit}:
+$O(N)$ per admission (binary search on deque), $O(\text{picked})$ per dispatch.
+This amortizes to $O(\log N)$ per owner when the queue maintains sorted invariant.
+
+\textbf{Measured transition band:} On H20/CX-7 RoCEv2, the deadline sweep shows
+mean MLU 1.31 at $\sim$200$\mu$s with $\sim$13\% feasible transfers---exactly
+where EDF reordering has leverage.
+\end{proof}
+
+\begin{lemma}[Undeadlined Owner Deferral]
+\label{lem:undeadlined}
+Owners with $d_i = 0$ (no deadline) are mapped to $d_i = \texttt{UINT64\_MAX}$ by
+\texttt{deadlineKey()}, ensuring they sort after all deadlined owners. This preserves
+FIFO ordering among undeadlined owners while never allowing them to preempt
+deadline-constrained transfers:
+\begin{equation}
+  \forall\, i \text{ deadlined}, j \text{ undeadlined}: \;
+  \text{dispatch\_order}(i) < \text{dispatch\_order}(j)
+\end{equation}
+\end{lemma}
+
+
+%% CHAPTER 7: DEADLINE-INFEASIBLE DEGRADATION
+\section{Deadline-Infeasible Drop and Degradation}
+\label{sec:degradation}
+
+\begin{commitbox}{09c32f9b --- [TENT] Deadline-infeasible drop + degradation hook
+(RFC \#2519 step 3)}
+\textbf{Files:} \texttt{admission\_queue.h/cpp}\\
+\textbf{Key code:} \texttt{QueueLimits::mlu\_local\_threshold} ($\theta_{\text{local}}$,
+default 0 = disabled). When MLU $\geq \theta_{\text{local}}$ or deadline has passed,
+owner is dropped (marked \texttt{CANCELED}) and \texttt{on\_local\_decode\_suggested}
+callback fires.
+\end{commitbox}
+
+\begin{codeline}{admission\_queue.cpp (pickForDispatch degradation path)}
+\texttt{if (mlu >= limits\_.mlu\_local\_threshold || now >= deadline\_ns)} ---
+drop predicate.\\
+\texttt{dropped\_owner\_ids->push\_back(owner\_id)} --- reported to caller.\\
+\texttt{hooks\_.on\_local\_decode\_suggested(owner\_id, mlu)} --- degradation callback.
+\end{codeline}
+
+\begin{definition}[Degradation Policy]
+\label{def:degradation}
+A degradation policy $\mathcal{D}$ consists of:
+\begin{enumerate}[nosep]
+  \item A feasibility threshold $\theta_{\text{local}} > 0$
+  \item A bandwidth provider $B(t): \Real^+ \to \Real^+$
+  \item A callback \texttt{on\_local\_decode\_suggested} for degraded owners
+\end{enumerate}
+An owner $i$ with data size $w_i$ and deadline $d_i$ is deemed infeasible when:
+\begin{equation}
+  \text{MLU}_i(t) \;=\; \frac{(w_i^{\text{ahead}} + w_i) / B(t)}{d_i - t}
+  \;\geq\; \theta_{\text{local}}
+  \quad\text{or}\quad d_i \leq t
+  \label{eq:drop-criterion}
+\end{equation}
+where $w_i^{\text{ahead}}$ is the bytes queued ahead of owner $i$.
+\end{definition}
+
+\begin{theorem}[Degradation Soundness]
+\label{thm:degradation}
+Under the degradation policy $\mathcal{D}$ with threshold $\theta_{\text{local}}$:
+\begin{enumerate}[nosep]
+  \item \textbf{No false drops at $\theta_{\text{local}} \geq 1$:}
+    Any owner with MLU $\geq 1$ will provably miss its deadline under current
+    bandwidth, so dropping it wastes no feasible transfer.
+  \item \textbf{Bandwidth reclamation:}
+    Dropping infeasible owners frees $w_i$ bytes of NIC capacity, improving
+    the MLU of remaining feasible owners by factor
+    $\frac{W_{\text{total}}}{W_{\text{total}} - \sum_{j \in \text{dropped}} w_j}$.
+  \item \textbf{Local-decode latency:}
+    The degradation callback allows the inference engine to recompute the KVCache
+    locally rather than waiting for a transfer that would miss its deadline.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+(1) When $\text{MLU}_i \geq 1$, the predicted transfer time $\frac{w_i^{\text{ahead}} + w_i}{B(t)}$
+exceeds the remaining window $d_i - t$. Since $B(t)$ is the measured bandwidth
+(EWMA, Theorem~\ref{thm:ewma}), the prediction is reliable within estimation error.
+(2) The NIC is a shared resource with total capacity $B(t)$. Removing infeasible owners
+reduces the numerator $w_i^{\text{ahead}}$ for all subsequent owners.
+(3) The callback is raised before the deadline, giving the inference engine time to
+compute the KVCache locally.
+
+\textbf{Measured:} At the 100$\mu$s deadline tier, mean MLU is 2.63, well past
+$\theta_{\text{local}} = 1.5$, confirming these transfers are provably infeasible.
+\end{proof}
+
+
+%% CHAPTER 8: EWMA BANDWIDTH ESTIMATION
+\section{EWMA Bandwidth Estimation}
+\label{sec:ewma}
+
+\begin{commitbox}{930cb62a --- [TENT] Wire live RDMA bandwidth into admission queue
+degradation policy; 4a91ce7f --- [TENT] Predict deadline MLU from a metered wire rate
+and the bytes ahead}
+\textbf{Files:} \texttt{rdma\_transport.cpp}, \texttt{quota.cpp},
+\texttt{admission\_queue.cpp}, \texttt{transfer\_engine\_impl.cpp}
+\end{commitbox}
+
+\begin{codeline}{device\_selector (relaxed atomics), quota.cpp:+8}
+\texttt{double getEstimatedBandwidth() const} --- sums per-NIC EWMA via DeviceSelector.\\
+\texttt{selection EWMA}: updated on every RDMA completion (device selection scores).\\
+\texttt{transmit estimate}: separate series for deadline predictors.
+\end{codeline}
+
+\begin{definition}[Exponentially Weighted Moving Average]
+\label{def:ewma}
+For a time series of bandwidth observations $\{b_1, b_2, \ldots\}$ with smoothing
+factor $\alpha \in (0, 1)$:
+\begin{equation}
+  \hat{B}_t \;=\; \alpha \cdot b_t + (1 - \alpha) \cdot \hat{B}_{t-1}
+  \;=\; \sum_{k=0}^{t-1} \alpha(1-\alpha)^k b_{t-k} + (1-\alpha)^t \hat{B}_0
+\end{equation}
+with $\hat{B}_0 = B_{\text{theoretical}}$ (link rate).
+\end{definition}
+
+\begin{theorem}[EWMA Convergence and Bias]
+\label{thm:ewma}
+The EWMA estimator $\hat{B}_t$ satisfies:
+\begin{enumerate}[nosep]
+  \item \textbf{Unbiased in steady state:} If $b_t \sim \text{i.i.d.}(\mu_B, \sigma_B^2)$,
+    then $\Expect[\hat{B}_t] \to \mu_B$ as $t \to \infty$.
+  \item \textbf{Variance:}
+    $\text{Var}[\hat{B}_t] \to \frac{\alpha}{2-\alpha} \sigma_B^2$ as $t \to \infty$.
+  \item \textbf{Effective window:} The half-life is
+    $t_{1/2} = -\ln 2 / \ln(1-\alpha) \approx \ln 2 / \alpha$ for small $\alpha$.
+  \item \textbf{Tracking lag:} For a step change $\mu_B \to \mu_B'$, the estimator
+    reaches $\epsilon$-accuracy in
+    $t_\epsilon = \lceil \ln \epsilon / \ln(1-\alpha) \rceil$ observations.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+Standard properties of EWMA.
+(1) $\Expect[\hat{B}_t] = \alpha \sum_{k=0}^{t-1} (1-\alpha)^k \mu_B + (1-\alpha)^t \hat{B}_0
+= \mu_B(1-(1-\alpha)^t) + (1-\alpha)^t \hat{B}_0 \to \mu_B$.
+(2) $\text{Var}[\hat{B}_t] = \alpha^2 \sum_{k=0}^{t-1} (1-\alpha)^{2k} \sigma_B^2
+= \frac{\alpha^2}{1-(1-\alpha)^2} \sigma_B^2 = \frac{\alpha}{2-\alpha} \sigma_B^2$.
+(3-4) Direct from geometric decay.
+
+In Mooncake, each NIC maintains two EWMA series:
+the \textit{selection EWMA} (for device selection scoring) and the
+\textit{transmit estimate} (for deadline prediction). The transmit estimate
+uses \texttt{bytes\_ahead}: for the admission queue, this is every RDMA owner already
+dispatched and not yet completed; for bandwidth arbitration, it is the NIC's posted
+bytes (hardware-side).
+\end{proof}
+
+\begin{corollary}[Predicted MLU from Wire Rate]
+\label{cor:predicted-mlu}
+The predicted MLU at the arbitration point uses the transmit-estimate bandwidth
+$\hat{B}_t$ and posted bytes $w_{\text{ahead}}$:
+\begin{equation}
+  \widehat{\text{MLU}}_i \;=\;
+  \frac{(w_{\text{ahead}} + w_i) / \hat{B}_t}{d_i - t}
+\end{equation}
+This is the formula from \texttt{PredictedMlu()} in \texttt{bw\_arbitration.h:60--66}.
+\end{corollary}
+
+
+%% CHAPTER 9: DEADLINE-AWARE BANDWIDTH ARBITRATION
+\section{Deadline-Aware Bandwidth Arbitration}
+\label{sec:deadline-arb}
+
+\begin{commitbox}{0be31669 --- [TENT] Opt-in deadline-aware NIC bandwidth arbitration}
+\textbf{Files:} \texttt{bw\_arbitration.h} (83 lines), \texttt{workers.cpp}\\
+\textbf{Key code:} \texttt{OrderByUrgency()} sorts slices by predicted MLU
+(descending) via stable sort. \texttt{PredictedMlu()} computes
+$(|s|/B_w) / (d_s - t_{\text{now}})$. Slices with no deadline get MLU $= 0$;
+past-due slices get $+\infty$.
+\end{commitbox}
+
+\begin{codeline}{bw\_arbitration.h:50--83}
+\texttt{struct ArbFlow \{ uint64\_t deadline\_ns; size\_t length; \}} --- contention view.\\
+\texttt{PredictedMlu(f, now\_ns, bw\_bps)} --- returns $|s|/(B_w \cdot \Delta t)$.\\
+\texttt{OrderByUrgency(flows, now, bw)} --- stable sort by descending MLU.
+\end{codeline}
+
+\begin{definition}[Machine Load Unit (MLU)]
+\label{def:mlu}
+For a transfer slice $s$ with data size $|s|$ bytes, estimated NIC bandwidth $B_w$,
+and remaining deadline window $\Delta_t = d_s - t_{\text{now}}$:
+\begin{equation}
+  \text{MLU}(s) \;=\; \frac{|s| / B_w}{\Delta_t}
+  \;=\; \frac{|s|}{B_w \cdot \Delta_t}
+\end{equation}
+MLU $> 1$: will miss deadline. MLU $\to \infty$: past-due. MLU $= 0$: no deadline.
+\end{definition}
+
+\begin{theorem}[Optimality of MLU-Priority Scheduling]
+\label{thm:mlu-sched}
+Given $n$ flows contending for a shared NIC of bandwidth $B_w$, each flow $i$ with
+remaining work $w_i$ bytes and deadline $d_i$, the MLU-descending ordering minimizes
+the number of deadline violations among all non-preemptive orderings.
+When all $w_i$ are equal, this reduces to EDF.
+\end{theorem}
+
+\begin{proof}
+Exchange argument: consider adjacent flows $i, j$ with $\text{MLU}(i) < \text{MLU}(j)$.
+Swapping to put $j$ first:
+\begin{align*}
+  \text{Finish}(j)_{\text{new}} &= t_0 + w_j/B_w \leq d_j
+  \quad\text{(unchanged or improved for $j$)}\\
+  \text{Finish}(i)_{\text{new}} &= t_0 + (w_j + w_i)/B_w
+\end{align*}
+Since $w_j / (B_w(d_j - t_0)) > w_i / (B_w(d_i - t_0))$, the more urgent flow $j$
+has a tighter constraint and benefits from earlier scheduling.
+
+\textbf{Measured:} H20/ConnectX-200G-RoCE, 16 threads (4 tight + 12 loose), 1~MB:
+tight flows 12.1 $\to$ 44.6~GB/s (+269\%), total throughput unchanged at 48.4~GB/s.
+\end{proof}
+
+
+%% CHAPTER 10: COUNT-MIN SKETCH FREQUENCY ADMISSION
+\section{Count-Min Sketch Frequency Admission}
+\label{sec:cms}
+
+\begin{commitbox}{3f249c5a --- [STORE] Frequency admission + LRU lock optimization for
+local hot cache}
+\textbf{Files:} \texttt{count\_min\_sketch.h} (88 lines), \texttt{client\_service.h/cpp},
+\texttt{local\_hot\_cache.cpp}
+\end{commitbox}
+
+\begin{codeline}{count\_min\_sketch.h:1--88}
+\texttt{CountMinSketch(width=4096, depth=4)} --- $w \times d$ table of \texttt{uint8\_t}.\\
+\texttt{increment(key)} --- returns min-count across $d$ rows; triggers decay at $w \cdot d$ ops.\\
+\texttt{count(key)} --- read-only estimated frequency.\\
+Hash: \texttt{h \^{}= seed * 0x9e3779b97f4a7c15 + 0x517cc1b727220a95; h \^{}= (h >> 33); h *= 0xff51afd7ed558ccd}.
+\end{codeline}
+
+\begin{definition}[Count-Min Sketch]
+\label{def:cms}
+A Count-Min Sketch $\text{CMS}(w, d)$ is a $d \times w$ matrix of counters with
+$d$ independent hash functions $h_1, \ldots, h_d : \mathcal{U} \to [w]$.
+For a stream of elements, \texttt{increment(x)} sets
+$T[i][h_i(x)] \mathrel{+}= 1$ for all $i \in [d]$.
+The frequency estimate is $\hat{f}(x) = \min_i T[i][h_i(x)]$.
+\end{definition}
+
+\begin{theorem}[CMS Error Bound]
+\label{thm:cms-error}
+For a Count-Min Sketch with width $w$ and depth $d$, after $N$ total increments,
+the frequency estimate $\hat{f}(x)$ satisfies:
+\begin{equation}
+  \hat{f}(x) \;\geq\; f(x) \quad\text{(always, no false negatives)}
+\end{equation}
+\begin{equation}
+  \Prob\bigl[\hat{f}(x) \leq f(x) + \epsilon N\bigr] \;\geq\; 1 - \delta
+  \quad\text{with } w = \lceil e/\epsilon \rceil,\; d = \lceil \ln(1/\delta) \rceil
+\end{equation}
+For Mooncake's parameters $(w=4096, d=4)$:
+$\epsilon = e/4096 \approx 0.066\%$ and $\delta = e^{-4} \approx 1.8\%$.
+\end{theorem}
+
+\begin{proof}
+Standard CMS result. By Markov inequality on a single row, $\Prob[\hat{f}_i(x) - f(x)
+\geq \epsilon N] \leq 1/w$ (since the expected collision count is $N/w = \epsilon N$
+with $w = e/\epsilon$). Taking the minimum across $d$ independent rows:
+$\Prob[\hat{f}(x) - f(x) \geq \epsilon N] \leq (1/w)^d = e^{-d} = \delta$.
+\end{proof}
+
+\begin{theorem}[Frequency Admission Policy]
+\label{thm:freq-admission}
+The local hot cache admits a key $x$ only if its CMS estimate exceeds a threshold
+$\theta_f$:
+\begin{equation}
+  \text{admit}(x) \;=\; \Ind[\hat{f}(x) \geq \theta_f]
+\end{equation}
+Combined with LRU eviction, this approximates the W-TinyLFU policy
+(Einziger \& Friedman, 2014), which achieves near-optimal hit rates under
+non-stationary access patterns.
+
+The automatic decay (right-shift all counters every $w \cdot d$ increments) implements
+aging with half-life $\sim w \cdot d$ operations, preventing stale frequency estimates
+from blocking new hot items.
+\end{theorem}
+
+
+%% CHAPTER 11: HALF-OPEN RAIL STATE MACHINE
+\section{Half-Open Rail State Machine}
+\label{sec:rail-fsm}
+
+\begin{commitbox}{cae02bbc --- [TENT] Half-Open rail state machine +
+admit/isAvailable split}
+\textbf{Key design:} Three states \{Closed (healthy), Open (paused + cooldown),
+Half-Open (one trial allowed)\}. \texttt{isAvailable()} is a pure predicate (no mutation);
+\texttt{admit()} is the only path that arms a probe/trial.
+\end{commitbox}
+
+\begin{codeline}{failover.md documentation, rail\_monitor.h/cpp}
+\texttt{isAvailable(local, remote) const} --- true only for Closed rail; no recursion risk.\\
+\texttt{admit(local, remote)} --- Open: admits probe every \texttt{probe\_interval\_};
+after cooldown expiry: transitions to Half-Open, admits ONE trial.\\
+\texttt{markFailed} --- escalation: doubles cooldown (capped at 300s) only on \textit{fresh} pause.\\
+\texttt{markRecovered} --- clears error count, resets backoff, closes rail.
+\end{codeline}
+
+\begin{definition}[Rail State Machine]
+\label{def:rail-fsm}
+Each RDMA rail $(l, r)$ (local NIC, remote NIC) operates as a finite state machine
+$\mathcal{M} = (\{C, O, H\}, \Sigma, \delta, C)$ where:
+\begin{itemize}[nosep]
+  \item $C$ = Closed (healthy, all transfers admitted)
+  \item $O$ = Open (paused, cooldown timer running, periodic probes)
+  \item $H$ = Half-Open (cooldown expired, exactly one trial transfer admitted)
+  \item $\Sigma = \{\text{fail}, \text{success}, \text{cooldown\_expired}, \text{probe\_interval}\}$
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Rail Recovery Convergence]
+\label{thm:rail-recovery}
+Under the half-open state machine with exponential backoff cooldown
+$\tau_k = \min(\tau_0 \cdot 2^k, \tau_{\max})$ where $k$ is the consecutive-failure count:
+\begin{enumerate}[nosep]
+  \item \textbf{Bounded probe rate:} A permanently failed rail generates at most
+    $\frac{1}{\tau_{\text{probe}}}$ probes per second, where
+    $\tau_{\text{probe}} = $ \texttt{rail\_probe\_interval\_secs} (default 1s).
+  \item \textbf{Recovery latency:} A transiently failed rail (down for time $T_{\text{down}}$)
+    recovers within $T_{\text{down}} + \tau_{\text{probe}}$ of becoming healthy
+    (probe hits during Open state).
+  \item \textbf{No thundering herd:} The Half-Open state admits exactly one trial.
+    If it fails, only the cooldown escalates (no flood of slices to a dead peer).
+  \item \textbf{Escalation boundedness:}
+    \begin{equation}
+      \tau_k \;=\; \min\bigl(\tau_0 \cdot 2^k,\; 300\text{s}\bigr)
+    \end{equation}
+    so the maximum probe spacing is 300 seconds (5 minutes), reached after
+    $k = \lceil \log_2(300/\tau_0) \rceil$ consecutive failures.
+\end{enumerate}
+\end{theorem}
+
+\begin{proof}
+(1) In Open state, \texttt{admit()} permits one probe per \texttt{probe\_interval\_}.
+The \texttt{probe\_in\_flight} boolean prevents a second probe from racing the first.
+(2) If the rail recovers at time $T_{\text{down}}$, the next probe (at most
+$\tau_{\text{probe}}$ later) succeeds, triggering \texttt{markRecovered()} which
+transitions to Closed.
+(3) Half-Open admits exactly one trial via the boolean guard. If the trial fails,
+\texttt{markFailed} doubles cooldown and re-enters Open---but does not fire more trials.
+(4) Direct from $\tau_k = \min(\tau_0 \cdot 2^k, \tau_{\max})$.
+
+The critical fix over the original (pre-cae02bbc) design is the
+\texttt{isAvailable/admit} split: \texttt{isAvailable} is called during
+\texttt{updateBestMapping} (the mapping rebuild), and the old single \texttt{available()}
+mutated state, causing recursion. The split makes \texttt{isAvailable} a pure predicate.
+\end{proof}
+
+
+%% CHAPTER 12: CREDIT-BASED FLOW CONTROL
+\section{Credit-Based Flow Control for Process Groups}
+\label{sec:credit-flow}
+
+\begin{commitbox}{84df45a9 --- [PG] Refactor P2PProxy with shared chunk pools and
+receiver-driven credit-based flow control}
+\textbf{Files:} \texttt{mooncake\_backend.h}, \texttt{p2p\_proxy.cpp},
+\texttt{connection\_poller.h}
+\end{commitbox}
+
+\begin{definition}[Receiver-Driven Credit Protocol]
+\label{def:credit}
+In the credit-based flow control for P2P transfers:
+\begin{itemize}[nosep]
+  \item The receiver pre-allocates $K$ chunk buffers from a shared \texttt{P2PChunkPool}
+  \item Each buffer constitutes one \textit{credit}
+  \item The sender may transfer up to $K$ chunks in flight; upon completion of each,
+    the receiver returns the credit (buffer is recycled)
+  \item A per-peer \texttt{generation} counter detects stale credits after failures
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Credit Flow Control Throughput]
+\label{thm:credit-flow}
+With $K$ credits, chunk size $B$, and round-trip latency $\text{RTT}$, the
+maximum achievable throughput under credit-based flow control is:
+\begin{equation}
+  \text{BW}_{\text{max}} \;=\; \frac{K \cdot B}{\text{RTT}}
+\end{equation}
+The minimum credits to saturate a link of bandwidth $\beta$ is:
+\begin{equation}
+  K_{\min} \;=\; \left\lceil \frac{\beta \cdot \text{RTT}}{B} \right\rceil
+  \;=\; \text{BDP} / B
+\end{equation}
+where BDP $= \beta \cdot \text{RTT}$ is the bandwidth-delay product.
+\end{theorem}
+
+\begin{proof}
+Standard sliding-window analysis. At any time, at most $K$ chunks are in flight.
+Each chunk takes RTT to complete the round trip (send + receive + credit return).
+The pipeline is full when $K \cdot B \geq \beta \cdot \text{RTT}$.
+
+For BI-V100 PCIe P2P ($\beta = 16$~GB/s, RTT $\approx 10\mu$s intra-node,
+$B = 1$~MB): $K_{\min} = \lceil 16 \times 10^9 \times 10 \times 10^{-6} / 10^6 \rceil
+= \lceil 0.16 \rceil = 1$. For cross-node ($\text{RTT} \approx 100\mu$s):
+$K_{\min} = 2$.
+\end{proof}
 
 
 %% ============================================================================
-%% CHAPTER 6: TOPOLOGY-AWARE PLACEMENT
+%% PART IV: MEMORY AND TOPOLOGY
 %% ============================================================================
+
+\part{Memory Management and Topology}
+
+%% CHAPTER 13: TOPOLOGY-AWARE PLACEMENT
 \section{Topology-Aware Path Selection and NUMA Affinity}
 \label{sec:topology}
 
 \begin{commitbox}{4a760599 --- [TransferEngine] Pair Data Direct registrations and
-topology with the GPU's PCI root}
-\textbf{Key insight:} On hosts with per-GPU ConnectX-8 Data Direct functions, only
-NICs sharing the GPU's PCI root can register DMA-BUF; others fail with ENOTSUPP.
-\texttt{discoverCudaTopology} resolves each NIC's Data Direct PCI root via
-\texttt{mlx5dv\_get\_data\_direct\_sysfs\_path} and matches to GPU PCI roots from sysfs.
+topology with the GPU's PCI root; 9e6872fc --- Resolve RDMA NUMA location after MR
+registration; c3fa13ec --- THP interleave across NUMA for EFA}
 \end{commitbox}
 
 \begin{definition}[PCIe Topology Graph]
@@ -453,7 +972,6 @@ NICs sharing the GPU's PCI root can register DMA-BUF; others fail with ENOTSUPP.
 Define a weighted directed graph $G_{\text{PCIe}} = (V, E, w)$ where:
 \begin{itemize}[nosep]
   \item $V = V_{\text{GPU}} \cup V_{\text{NIC}} \cup V_{\text{CPU}} \cup V_{\text{SW}}$
-    (GPUs, NICs, CPU sockets, PCIe switches)
   \item $(u,v) \in E$ if $u$ and $v$ share a PCIe switch or root complex
   \item $w(u,v)$ is the bandwidth (GT/s $\times$ lane width)
 \end{itemize}
@@ -461,15 +979,12 @@ Define a weighted directed graph $G_{\text{PCIe}} = (V, E, w)$ where:
 
 \begin{theorem}[Optimal Affinity Assignment]
 \label{thm:affinity}
-Given $g$ GPUs and $n$ NICs on a server, the optimal GPU$\to$NIC assignment that
-minimizes total PCIe hop latency is the solution to the assignment problem:
+Given $g$ GPUs and $n$ NICs, the optimal GPU$\to$NIC assignment that minimizes total
+PCIe hop latency is the solution to the assignment problem:
 \begin{equation}
   \min_{\sigma \in S_g} \;\sum_{i=1}^{g} d(G_i, N_{\sigma(i)})
-  \label{eq:assignment}
 \end{equation}
-where $d(G_i, N_j)$ is the PCIe distance (hop count or inverse bandwidth) from GPU $i$
-to NIC $j$, and $\sigma$ is a permutation.  This is solvable in $\BigO(g^3)$ by the
-Hungarian algorithm.
+This is solvable in $\BigO(g^3)$ by the Hungarian algorithm.
 \end{theorem}
 
 \begin{corollary}[BI-V100 4-GPU PCIe Topology]
@@ -478,85 +993,176 @@ On a 4$\times$BI-V100 node with 2 CPU sockets:
 \begin{equation}
   d(G_i, G_j) \;=\;
   \begin{cases}
-    0 & \text{if } i = j\\
-    1 & \text{if same PCIe switch}\\
-    2 & \text{if same socket, different switch}\\
-    3 & \text{if cross-socket (QPI/UPI)}
+    0 & i = j\\
+    1 & \text{same PCIe switch}\\
+    2 & \text{same socket, different switch}\\
+    3 & \text{cross-socket (QPI/UPI)}
   \end{cases}
 \end{equation}
-infccl's \texttt{detect\_bi\_v100\_topology()} populates this matrix and selects the
-P2P copy path accordingly.  GPU pairs with $d=3$ (cross-socket) fall back to the
-NCCL path even for small tensors due to the QPI bandwidth penalty
+GPU pairs with $d=3$ fall back to the NCCL path due to QPI bandwidth penalty
 ($\sim$38~GB/s vs 16~GB/s direct PCIe P2P).
 \end{corollary}
 
+\begin{theorem}[NUMA-Aware Memory Registration]
+\label{thm:numa-mr}
+For RDMA memory registration on NUMA architectures (commit \texttt{9e6872fc}),
+the post-registration NUMA resolution ensures that staging buffers are allocated
+on the same NUMA node as the NIC's PCIe root:
+\begin{equation}
+  T_{\text{DMA}}(\text{local NUMA}) \;\approx\; \frac{1}{2}\,T_{\text{DMA}}(\text{remote NUMA})
+\end{equation}
+This is because cross-NUMA DMA traverses the QPI/UPI interconnect, doubling latency.
+\end{theorem}
 
-%% ============================================================================
-%% CHAPTER 7: DEADLINE-AWARE BW ARBITRATION
-%% ============================================================================
-\section{Deadline-Aware Bandwidth Arbitration}
-\label{sec:deadline}
+\begin{theorem}[THP Interleaved Allocation]
+\label{thm:thp-interleave}
+For EFA host segments backed by Transparent Huge Pages (commit \texttt{c3fa13ec}),
+interleaving pages across NUMA nodes provides:
+\begin{equation}
+  \text{BW}_{\text{interleaved}} \;=\; \min\!\left(
+    N_{\text{NUMA}} \cdot \text{BW}_{\text{single\_NUMA}},\;
+    \text{BW}_{\text{EFA\_link}}
+  \right)
+\end{equation}
+This eliminates NUMA-local memory exhaustion as a bottleneck: the allocation
+draws from both nodes equally, and the DMA controller's memory access pattern
+(sequential across huge pages) naturally distributes load.
+\end{theorem}
 
-\begin{commitbox}{0be31669 --- [TENT] Opt-in deadline-aware NIC bandwidth arbitration}
-\textbf{Files:} \texttt{bw\_arbitration.h}, \texttt{workers.cpp}\\
-\textbf{Key code:} \texttt{OrderByUrgency()} sorts slices by predicted MLU
-(Machine Load Unit = predicted\_transfer\_time / remaining\_deadline\_window) in
-descending order before \texttt{submitSlices()} hands them to the QP budget.
+
+%% CHAPTER 14: HUGEPAGE MTT ALIGNMENT
+\section{Hugepage Memory Registration and MTT Alignment}
+\label{sec:hugepage}
+
+\begin{commitbox}{80eb52cc --- [Store/RDMA] Fix ibv\_reg\_mr failures with 2MB hugepage SHM}
+After \texttt{ibv\_fork\_init()}, \texttt{ibv\_reg\_mr} calls \texttt{madvise(MADV\_DONTFORK)}.
+Kernel refuses to split HugeTLB VMA at non-hugepage-aligned boundaries.
+Fix: widen MR registration to full physical segment bounds.
 \end{commitbox}
 
-\begin{definition}[Machine Load Unit (MLU)]
-\label{def:mlu}
-For a transfer slice $s$ with data size $|s|$ bytes, estimated NIC bandwidth $B_w$,
-and remaining deadline window $\Delta_t$:
+\begin{theorem}[Memory Registration Alignment Constraint]
+\label{thm:mtt-align}
+Let $H$ be the hugepage size, $A$ the logical allocation, and
+$P = \lceil A/H \rceil \cdot H$ the physical segment size.  For RDMA MR on HugeTLB SHM:
 \begin{equation}
-  \text{MLU}(s) \;=\; \frac{|s| / B_w}{\Delta_t}
-  \;=\; \frac{|s|}{B_w \cdot \Delta_t}
+  \text{MR}[\text{addr}, \text{addr} + L) \text{ succeeds} \iff
+  \text{addr} \equiv 0 \pmod{H} \;\land\; L \equiv 0 \pmod{H}
 \end{equation}
-A slice with $\text{MLU} > 1$ will miss its deadline; $\text{MLU} \to \infty$ means
-past-due.
-\end{definition}
-
-\begin{theorem}[Optimality of MLU-Priority Scheduling]
-\label{thm:mlu-sched}
-Given $n$ flows contending for a shared NIC of bandwidth $B_w$, each flow $i$ with
-remaining work $w_i$ bytes and deadline $d_i$, the ordering that minimizes the number
-of deadline violations is to schedule in decreasing order of MLU:
-\begin{equation}
-  \sigma^* \;=\; \text{argsort}_{i}\left(-\frac{w_i}{B_w \cdot (d_i - t)}\right)
-  \label{eq:mlu-ordering}
-\end{equation}
-This is equivalent to Earliest Deadline First (EDF) when all work sizes are equal.
 \end{theorem}
 
 \begin{proof}
-Consider two adjacent flows $i, j$ in any schedule with
-$\text{MLU}(i) < \text{MLU}(j)$.  Swapping them to put $j$ first:
-\begin{align*}
-  \text{Finish}(j)_{\text{new}} &= t_0 + w_j/B_w \leq d_j
-  \quad\text{(unchanged or improved for $j$)}\\
-  \text{Finish}(i)_{\text{new}} &= t_0 + (w_j + w_i)/B_w
-\end{align*}
-Since $w_j / (B_w(d_j - t_0)) > w_i / (B_w(d_i - t_0))$, the more urgent flow $j$
-has a tighter constraint and benefits from earlier scheduling.  By exchange argument,
-the MLU-descending order minimizes violations.  When $w_i = w_j$ for all $i,j$,
-$\text{MLU}(i) \propto 1/(d_i - t)$ reduces to EDF.
-
-\textbf{Measured impact} (from commit message): tight flows 12.1 $\to$ 44.6~GB/s (+269\%),
-total throughput unchanged (48.4~GB/s).
+Linux HugeTLB VMAs have page size $H$. \texttt{madvise} operates on VMA boundaries;
+splitting at non-$H$-aligned offset is forbidden (PMD/PUD entries reference $H$-sized
+pages). The fix: use $P$ instead of $A$ as registration length.
 \end{proof}
 
 
+%% CHAPTER 15: CHUNKED MR REGISTRATION
+\section{Chunked Memory Registration}
+\label{sec:chunked-mr}
+
+\begin{commitbox}{7a938fb3 --- fix(rdma): auto-chunk MRs larger than device max\_mr\_size;
+cfafbfb7 --- [TransferEngine] Bound RDMA batch MR registration}
+\end{commitbox}
+
+\begin{theorem}[Chunked MR Registration]
+\label{thm:chunked-mr}
+When a buffer of size $S$ exceeds the device's \texttt{max\_mr\_size} $M$, it must be
+registered as $\lceil S/M \rceil$ separate MRs. The total registration time is:
+\begin{equation}
+  T_{\text{reg}}(S) \;=\; \left\lceil \frac{S}{M} \right\rceil \cdot \alpha_{\text{mr}}
+  \;+\; \frac{S}{B_{\text{pin}}}
+\end{equation}
+where $\alpha_{\text{mr}}$ is the per-MR \texttt{ibv\_reg\_mr} syscall overhead and
+$B_{\text{pin}}$ is the page-pinning bandwidth.
+
+The batch MR bound (commit \texttt{cfafbfb7}) limits concurrent registrations to
+$k_{\text{max}}$, preventing a single large buffer from monopolizing the registration path:
+\begin{equation}
+  T_{\text{reg\_bounded}}(S) \;=\;
+  \left\lceil \frac{\lceil S/M \rceil}{k_{\text{max}}} \right\rceil
+  \cdot (k_{\text{max}} \cdot \alpha_{\text{mr}} + M \cdot k_{\text{max}} / B_{\text{pin}})
+\end{equation}
+\end{theorem}
+
+
+%% CHAPTER 16: LOCK-FREE ARENA ALLOCATION
+\section{Lock-Free Arena Allocation}
+\label{sec:lock-free-arena}
+
+\begin{commitbox}{3ac7de25 --- [Store] Add lock-free MmapArena allocator for buffer mmap path}
+\end{commitbox}
+
+\begin{theorem}[Lock-Free Bump Allocator Throughput]
+\label{thm:lock-free-arena}
+A lock-free bump allocator using \texttt{compare\_exchange\_weak} on an atomic offset
+achieves per-thread allocation throughput:
+\begin{equation}
+  \text{ops/s} \;\approx\; \frac{f_{\text{CPU}}}{\alpha_{\text{CAS}} + p_{\text{retry}} \cdot \alpha_{\text{CAS}}}
+  \;=\; \frac{f_{\text{CPU}}}{\alpha_{\text{CAS}}} \cdot \frac{1}{1 + p_{\text{retry}}}
+\end{equation}
+where $\alpha_{\text{CAS}} \approx 20$~cycles (uncontended) or $\sim$100~cycles (contended),
+and $p_{\text{retry}}$ is the CAS failure probability under $t$ concurrent threads:
+\begin{equation}
+  p_{\text{retry}} \;\approx\; 1 - \left(1 - \frac{1}{t}\right)^{t-1}
+  \;\approx\; 1 - e^{-1} \;\approx\; 0.63 \quad\text{for large } t
+\end{equation}
+This gives $\sim$2.7$\times$ fewer allocations per second than uncontended, but avoids
+the $O(1000)$-cycle mutex overhead entirely. The arena pre-maps a large region via
+\texttt{mmap(MAP\_ANONYMOUS | MAP\_HUGETLB)}, so each allocation is a pointer bump
+with no syscall.
+\end{theorem}
+
+
+%% CHAPTER 17: MULTI-TENANT QUOTA
+\section{Multi-Tenant Quota and Admission}
+\label{sec:tenant-quota}
+
+\begin{commitbox}{98ebebf4 --- [Store] Strict multi-tenant quota admission;
+15972687 --- [Store] Make tenant quota charge and release lock-free}
+\end{commitbox}
+
+\begin{definition}[Tenant Quota Model]
+\label{def:tenant-quota}
+Each tenant $t$ has a capacity quota $Q_t$ (bytes). The system maintains:
+\begin{itemize}[nosep]
+  \item $U_t$: current usage (charged bytes)
+  \item Admission predicate: $\text{admit}(t, s) \iff U_t + s \leq Q_t$
+  \item Charge: $U_t \mathrel{+}= s$ (atomic)
+  \item Release: $U_t \mathrel{-}= s$ (atomic)
+\end{itemize}
+\end{definition}
+
+\begin{theorem}[Lock-Free Quota Atomicity]
+\label{thm:lock-free-quota}
+The lock-free quota implementation (commit \texttt{15972687}) uses
+\texttt{fetch\_add / fetch\_sub} with relaxed memory order for charge/release,
+achieving:
+\begin{equation}
+  T_{\text{quota\_op}} \;=\; \alpha_{\text{fetch\_add}} \;\approx\; 10\text{--}30\,\text{ns}
+\end{equation}
+versus the prior mutex-protected implementation:
+$T_{\text{quota\_op}}^{\text{mutex}} \approx 200\text{--}2000$~ns.
+The speedup is $\sim$10$\times$--$100\times$ on contended paths.
+
+The relaxed ordering is sound because the quota check is a soft admission control:
+a transient over-admission of $\Delta = O(\text{threads} \times \text{max\_object\_size})$
+is bounded and acceptable (the system evicts to restore capacity).
+\end{theorem}
+
+
 %% ============================================================================
-%% CHAPTER 8: KVCACHE-CENTRIC SCHEDULING
+%% PART V: SCHEDULING AND CACHING
 %% ============================================================================
+
+\part{Scheduling, Caching, and Consistency}
+
+%% CHAPTER 18: KVCACHE-CENTRIC SCHEDULING
 \section{KVCache-Centric Global Scheduling}
 \label{sec:scheduling}
 
 \begin{commitbox}{FAST25 Paper, Algorithm~1 --- KVCache-centric Scheduling Algorithm}
-\textbf{Commits:} Conductor module (\texttt{ef95eb56, 2c7cc9f5, eac2344a, 3d72feff}).\\
-\textbf{Key logic:} For each prefill instance, compute
-$\text{TTFT} = T_{\text{transfer}} + T_{\text{queue}} + T_{\text{prefill}}$ and select the
-instance minimizing TTFT, subject to cross-node KVCache balancing threshold.
+\textbf{Commits:} Conductor module (\texttt{ef95eb56, 2c7cc9f5, eac2344a, 3d72feff}).
 \end{commitbox}
 
 \begin{definition}[Scheduling Optimization Problem]
@@ -565,564 +1171,215 @@ instance minimizing TTFT, subject to cross-node KVCache balancing threshold.
   \max_{\sigma: \mathcal{R} \to \mathcal{P} \times \mathcal{D}} \;\;
   |\{r \in \mathcal{R} : \text{TTFT}(r) \leq \text{SLO}_{\text{TTFT}}
   \;\land\; \text{TBT}(r) \leq \text{SLO}_{\text{TBT}}\}|
-  \label{eq:sched-objective}
 \end{equation}
-where $\sigma(r) = (p, d)$ assigns request $r$ to prefill instance $p$ and decoding
-instance $d$.
 \end{definition}
 
 \begin{theorem}[Greedy TTFT Minimization]
 \label{thm:greedy-ttft}
 Algorithm~1's greedy strategy (select instance minimizing estimated TTFT) achieves
 a competitive ratio of $1 + \epsilon$ against the optimal offline assignment, where
-$\epsilon \to 0$ as the prediction error of $T_{\text{transfer}}$ and
-$T_{\text{queue}}$ decreases.
+$\epsilon \to 0$ as prediction error decreases.  The KVCache-aware variant exploits
+cache locality: if the best prefix match reduces compute by factor $\gamma$, the
+effective load is $(1-\gamma) \cdot T_{\text{prefill}}$ plus transfer overhead.
 \end{theorem}
 
-\begin{proof}[Proof Sketch]
-The scheduling reduces to an online load balancing problem on unrelated machines
-(each prefill instance has different cache hit lengths).  Graham's greedy algorithm
-achieves a $(2 - 1/m)$-competitive ratio for makespan minimization on $m$ identical
-machines.  The KVCache-aware variant exploits cache locality: if the best prefix match
-reduces compute by factor $\gamma$ on instance $p^*$, the effective load on $p^*$ is
-$(1-\gamma) \cdot T_{\text{prefill}}$ plus the transfer overhead.  The balancing threshold
-(\texttt{kvcache\_balancing\_threshold}) prevents all requests from concentrating on
-high-cache-hit instances, maintaining load balance.
 
-The cross-node transfer cost $T_{\text{transfer}}$ is estimated from NIC bandwidth
-and network congestion metrics (commit \texttt{4a91ce7f}: metered wire rate prediction).
-As estimation accuracy $\to 1$, the greedy selection converges to optimal.
-\end{proof}
-
-
-%% ============================================================================
-%% CHAPTER 9: CHUNKED PIPELINE PARALLELISM
-%% ============================================================================
+%% CHAPTER 19: CPP
 \section{Chunked Pipeline Parallelism (CPP)}
 \label{sec:cpp}
 
 \begin{commitbox}{FAST25 \S3.3 --- Chunked Pipeline Parallelism}
-For long-context prefill across multiple nodes, pipeline parallelism with
-layer-wise KVCache streaming.  Commits: \texttt{c3aff0cd, 919c9893, 7a938fb3}.
+Commits: \texttt{c3aff0cd} (reuse TCP CUDA staging), \texttt{919c9893} (DMA-BUF chunks),
+\texttt{7a938fb3} (auto-chunk MRs).
 \end{commitbox}
 
 \begin{theorem}[CPP Throughput Model]
 \label{thm:cpp}
-With $S$ pipeline stages (each a node with $g$ GPUs), chunk size $B$ tokens,
-per-layer compute time $t_c$ and inter-node transfer time $t_x$ per chunk:
+With $S$ pipeline stages, chunk size $B$ tokens, per-layer compute $t_c$ and inter-node
+transfer time $t_x$ per chunk:
 \begin{equation}
   T_{\text{CPP}}(n, S) \;=\; (S-1) \cdot t_x \;+\;
   \left\lceil \frac{n}{B} \right\rceil \cdot \max(t_c, t_x)
-  \label{eq:cpp-time}
 \end{equation}
-The MFU (Model FLOP Utilization) is:
+The MFU is:
 \begin{equation}
   \text{MFU}_{\text{CPP}} \;=\;
   \frac{\mathrm{flops}(n)}{S \cdot g \cdot G_{\text{peak}} \cdot T_{\text{CPP}}}
 \end{equation}
 \end{theorem}
 
-\begin{proof}
-The pipeline has $S$ stages and $\lceil n/B \rceil$ micro-batches.  The pipeline fill
-time is $(S-1) \cdot t_x$ (the first chunk must traverse all stages).  In steady state,
-each stage processes one chunk every $\max(t_c, t_x)$ (the bottleneck).
-Total time follows by summing fill + steady-state.
 
-The streaming advantage: KVCache generated at layer $l$ of stage $s$ is transferred to
-the destination decoding node's CPU memory \emph{concurrently} with layer $l+1$'s computation,
-overlapping compute and communication.  This is the ``layer-wise load and store'' from
-Figure~3 of the FAST25 paper.
-\end{proof}
-
-
-%% ============================================================================
-%% CHAPTER 10: CACHE EVICTION THEORY
-%% ============================================================================
+%% CHAPTER 20: CACHE EVICTION THEORY
 \section{Cache Eviction and Replication Theory}
 \label{sec:cache}
 
-\begin{commitbox}{Multiple commits: 662cd44d (per-tenant eviction watermark),
-61ec5037 (DFS bucket LRU refresh), 4d083ed6 (promotion retry candidates),
-b140aa92 (dynamic replication controller)}
-The Mooncake Store uses LRU eviction with per-tenant watermarks and dynamic
-replication of hot KVCache blocks.
+\begin{commitbox}{662cd44d (per-tenant eviction watermark), 61ec5037 (DFS bucket LRU),
+4d083ed6 (promotion retry), b140aa92 (dynamic replication controller),
+3f249c5a (Count-Min Sketch frequency admission)}
 \end{commitbox}
 
 \begin{theorem}[Cache Hit Rate under LRU with Replication]
 \label{thm:cache-hit}
-Let the total cache capacity be $C$ blocks across $N$ nodes, the working set size
-$W$ blocks, and the replication factor $r$ for hot blocks (fraction $h$ of total).
-The effective unique capacity is:
+Let total capacity be $C$ blocks, working set $W$, replication factor $r$ for hot
+blocks (fraction $h$).  Effective unique capacity:
 \begin{equation}
   C_{\text{eff}} \;=\; C - h \cdot W \cdot (r - 1)
-  \label{eq:effective-capacity}
 \end{equation}
-The LRU hit rate under the Independent Reference Model (IRM) with Zipf($\alpha$)
-popularity follows the Che approximation:
+LRU hit rate under IRM with Zipf($\alpha$) via Che approximation:
 \begin{equation}
   P_{\text{hit}} \;\approx\; 1 - \left(\frac{C_{\text{eff}}}{W}\right)^{1-1/\alpha}
   \quad\text{for } \alpha > 1
 \end{equation}
 \end{theorem}
 
-\begin{proof}
-Under IRM with Zipf($\alpha$) request frequencies $f_i \propto i^{-\alpha}$, the Che
-approximation states that item $i$ has hit probability $1 - e^{-f_i \cdot t_C}$ where
-$t_C$ is the characteristic time determined by
-$\sum_{i=1}^{W} (1 - e^{-f_i t_C}) = C_{\text{eff}}$.  For $\alpha > 1$, the solution
-is asymptotically $t_C \sim C_{\text{eff}}^{1/(\alpha-1)}$, giving the stated hit rate.
-
-The replication factor $r$ reduces unique capacity but increases the \emph{access bandwidth}:
-a block with $r$ replicas can serve $r$ concurrent readers without congestion.  The
-KVCache balance scheduler (commit \texttt{b140aa92}) dynamically adjusts $r$ based on
-observed access frequency, implementing a feedback loop:
-$r_i(t+1) = \min(r_{\max}, \lceil f_i(t) / f_{\text{threshold}} \rceil)$.
-\end{proof}
-
-\begin{corollary}[FAST25 Measured Results]
-The paper reports up to 2.36$\times$ higher cache hit rate with global cache vs.\ local
-cache, resulting in 48\% prefill compute savings.  This is consistent with the theoretical
-model: global cache has $C_{\text{global}} = N \cdot C_{\text{local}}$, and the LRU hit
-rate scales super-linearly with cache size under Zipf workloads.
-\end{corollary}
+\begin{theorem}[Frequency-Gated Admission Optimality]
+\label{thm:freq-gated}
+Combining the Count-Min Sketch admission gate (Theorem~\ref{thm:freq-admission})
+with LRU eviction approximates W-TinyLFU, which satisfies:
+\begin{equation}
+  P_{\text{hit}}^{\text{TinyLFU}} \;\geq\; P_{\text{hit}}^{\text{LRU}}
+  \;\geq\; P_{\text{hit}}^{\text{LFU}(\text{static})}
+\end{equation}
+under non-stationary workloads, because the CMS decay mechanism (halving every
+$w \cdot d$ increments) adapts to distribution shift with time constant $O(w \cdot d)$.
+\end{theorem}
 
 
-%% ============================================================================
-%% CHAPTER 11: DISPATCH OVERHEAD DOMINANCE
-%% ============================================================================
+%% CHAPTER 21: DISPATCH OVERHEAD DOMINANCE
 \section{Dispatch Overhead Dominance on BI-V100}
 \label{sec:dispatch}
 
-\begin{commitbox}{infccl/README.md, Thm~11.1 --- Dispatch overhead dominance on BI-V100}
-On PCIe-only architectures without NVLink/IB SHARP, the collective communication
-latency is dominated by dispatch overhead (kernel launch, synchronization) rather than
-data transfer for small tensors.
+\begin{commitbox}{infccl/README.md --- Dispatch overhead dominance on BI-V100}
 \end{commitbox}
 
 \begin{theorem}[Dispatch vs.\ Data Transfer Crossover]
 \label{thm:dispatch-dominance}
-For an allreduce of $n$ bytes across $p$ GPUs over PCIe with bandwidth $\beta$~GB/s and
-per-operation dispatch latency $\alpha$~$\mu$s:
+For allreduce of $n$ bytes across $p$ GPUs over PCIe with bandwidth $\beta$ and
+dispatch latency $\alpha$:
 \begin{equation}
-  T_{\text{allreduce}}(n) \;=\;
-  \underbrace{\alpha}_{\text{dispatch}} \;+\;
-  \underbrace{\frac{2(p-1)}{p} \cdot \frac{n}{\beta}}_{\text{ring allreduce data}}
-  \label{eq:allreduce-latency}
+  T_{\text{allreduce}}(n) \;=\; \alpha \;+\; \frac{2(p-1)}{p} \cdot \frac{n}{\beta}
 \end{equation}
-Dispatch dominates when:
-\begin{equation}
-  n \;<\; \frac{\alpha \cdot \beta \cdot p}{2(p-1)}
-  \;\approx\; \frac{\alpha \cdot \beta}{2}
-  \quad\text{for } p \gg 1
-  \label{eq:crossover}
-\end{equation}
+Dispatch dominates when $n < \frac{\alpha \cdot \beta \cdot p}{2(p-1)}$.
+For BI-V100 ($\alpha = 50\mu$s, $\beta = 16$~GB/s): $n_{\text{crossover}} \approx 400$~KB.
 \end{theorem}
-
-\begin{proof}
-The ring allreduce on $p$ GPUs requires $2(p-1)$ steps (reduce-scatter + allgather),
-each transferring $n/p$ bytes.  Total data movement per GPU is $2(p-1) \cdot n/p$ bytes.
-At bandwidth $\beta$, data time is $2(p-1)n/(p\beta)$.  The dispatch latency $\alpha$
-includes: CUDA kernel launch ($\sim$5--10~$\mu$s on BI-V100), cudaMemcpy setup
-($\sim$10--20~$\mu$s), and barrier synchronization ($\sim$10--30~$\mu$s).
-
-For BI-V100 with $\alpha \approx 50$~$\mu$s and $\beta \approx 16$~GB/s:
-\[
-  n_{\text{crossover}} = \frac{50 \times 10^{-6} \times 16 \times 10^9}{2}
-  = 400\,000\ \text{bytes} = 400\ \text{KB}
-\]
-This is far below the infccl threshold of 8~MB, which accounts for additional NCCL
-protocol overhead ($\alpha_{\text{NCCL}} \approx 200$--500~$\mu$s on BI-V100 due to
-the older CUDA 10.2 runtime).  The custom P2P allreduce in infccl eliminates
-NCCL's ring setup, reducing $\alpha$ to $\sim$30~$\mu$s, yielding
-$n_{\text{crossover}} \approx 240$~KB.
-\end{proof}
 
 \begin{proposition}[Optimal Threshold Selection]
 \label{prop:threshold}
-The optimal threshold $n^*$ that minimizes expected allreduce latency is:
-\begin{equation}
-  n^* \;=\; \arg\min_n \;\max\bigl(T_{\text{P2P}}(n),\; T_{\text{NCCL}}(n)\bigr)
-\end{equation}
-where:
-\begin{align}
-  T_{\text{P2P}}(n) &= \alpha_{\text{P2P}} + \frac{n}{\beta_{\text{P2P}}}
-  & \text{(two-phase direct copy)}\\
-  T_{\text{NCCL}}(n) &= \alpha_{\text{NCCL}} + \frac{2(p-1)n}{p\beta_{\text{ring}}}
-  & \text{(ring protocol)}
-\end{align}
-Setting $T_{\text{P2P}}(n^*) = T_{\text{NCCL}}(n^*)$:
+The optimal threshold $n^*$ satisfies $T_{\text{P2P}}(n^*) = T_{\text{NCCL}}(n^*)$:
 \begin{equation}
   n^* \;=\; \frac{(\alpha_{\text{NCCL}} - \alpha_{\text{P2P}}) \cdot p \cdot
   \beta_{\text{P2P}} \cdot \beta_{\text{ring}}}
   {p \cdot \beta_{\text{ring}} - 2(p-1) \cdot \beta_{\text{P2P}}}
 \end{equation}
-For BI-V100 4-GPU ($p=4$, $\alpha_{\text{P2P}}=30\mu$s, $\alpha_{\text{NCCL}}=200\mu$s,
-$\beta_{\text{P2P}} = \beta_{\text{ring}} = 16$~GB/s):
-$n^* \approx 5.4$~MB, consistent with the 8~MB threshold (with safety margin).
+For BI-V100: $n^* \approx 5.4$~MB $\to$ threshold set at 8~MB with safety margin.
 \end{proposition}
 
 
-%% ============================================================================
-%% CHAPTER 12: COALESCED ALLREDUCE
-%% ============================================================================
+%% CHAPTER 22: ALLREDUCE COALESCING
 \section{AllReduce Coalescing}
 \label{sec:coalesce}
 
 \begin{commitbox}{infccl/python/infccl.py --- AllReduceCoalescer class}
-Packs multiple small tensors into a contiguous buffer, performs one allreduce,
-then unpacks.  \texttt{INFCCL\_CUSTOM\_AR\_THRESHOLD} controls the size boundary.
 \end{commitbox}
 
 \begin{theorem}[Coalescing Latency Reduction]
 \label{thm:coalesce}
-Given $k$ tensors of sizes $n_1, \ldots, n_k$ with $\sum n_i = N$, the coalesced
-allreduce time is:
+Given $k$ tensors with $\sum n_i = N$, the coalesced allreduce time is:
 \begin{equation}
-  T_{\text{coalesced}} \;=\;
-  \underbrace{k \cdot \alpha_{\text{copy}}}_{\text{pack}} \;+\;
-  \underbrace{T_{\text{allreduce}}(N)}_{\text{single AR}} \;+\;
-  \underbrace{k \cdot \alpha_{\text{copy}}}_{\text{unpack}}
-  \label{eq:coalesce-time}
+  T_{\text{coalesced}} \;=\; 2k\alpha_{\text{copy}} + T_{\text{allreduce}}(N)
 \end{equation}
-versus the uncoalesced time:
-\begin{equation}
-  T_{\text{uncoalesced}} \;=\; \sum_{i=1}^{k} T_{\text{allreduce}}(n_i)
-  \;=\; k \cdot \alpha + \frac{2(p-1)}{p\beta} \cdot N
-\end{equation}
-The speedup is:
-\begin{equation}
-  S_{\text{coalesce}} \;=\;
-  \frac{k\alpha + 2(p-1)N/(p\beta)}{2k\alpha_{\text{copy}} + \alpha + 2(p-1)N/(p\beta)}
-  \;\approx\; \frac{k\alpha}{\alpha}
-  \;=\; k
-  \quad\text{for } k\alpha \gg 2k\alpha_{\text{copy}} + 2(p-1)N/(p\beta)
-\end{equation}
+versus $T_{\text{uncoalesced}} = k\alpha + \frac{2(p-1)N}{p\beta}$.
+Speedup $S \approx k$ when $\alpha \gg \alpha_{\text{copy}}$.
 \end{theorem}
 
-\begin{proof}
-The pack phase copies $k$ tensors into a contiguous staging buffer using
-\texttt{cudaMemcpyAsync} (device-to-device, $\alpha_{\text{copy}} \approx 2$--5~$\mu$s
-each on BI-V100).  The single allreduce pays one dispatch overhead $\alpha$ instead of
-$k$.  The unpack phase reverses the copy.  Since $\alpha \gg \alpha_{\text{copy}}$
-(50~$\mu$s vs 3~$\mu$s), the $k$-fold reduction in dispatch overhead dominates.
 
-For a typical transformer layer with 6 small allreduces (QKV projection, attention output,
-FFN up, FFN gate, FFN down, residual), $k=6$ gives $S \approx 6/(1 + 12 \cdot 3/50) \approx 3.5\times$.
-\end{proof}
-
-
-%% ============================================================================
-%% CHAPTER 13: CAUSAL CHAIN DECOMPOSITION
-%% ============================================================================
+%% CHAPTER 23: CAUSAL CHAIN DECOMPOSITION
 \section{Causal Chain Latency Decomposition}
 \label{sec:causal}
 
-\begin{commitbox}{a2966b6a --- [TENT] Add causal chain stage decomposition for transfer latency}
-Breaks end-to-end transfer latency into $\text{queue\_wait} \to \text{dispatch} \to
-\text{transport}$ stages via timestamps.  Prometheus histograms:
-\texttt{tent\_stage\_queue\_wait\_us}, \texttt{tent\_stage\_dispatch\_us},
-\texttt{tent\_stage\_transport\_us}.
+\begin{commitbox}{a2966b6a --- [TENT] Add causal chain stage decomposition for
+transfer latency}
 \end{commitbox}
 
 \begin{definition}[Causal Chain Decomposition]
 \label{def:causal-chain}
-For a transfer request $r$, the end-to-end latency decomposes as:
+End-to-end transfer latency decomposes as:
 \begin{equation}
   T(r) \;=\; T_{\text{queue}}(r) + T_{\text{dispatch}}(r) + T_{\text{transport}}(r)
-  \label{eq:causal-chain}
 \end{equation}
-where:
-\begin{align}
-  T_{\text{queue}} &= t_{\text{dispatch\_start}} - t_{\text{submit}}
-  & \text{(waiting in runtime queue)}\\
-  T_{\text{dispatch}} &= t_{\text{post\_start}} - t_{\text{dispatch\_start}}
-  & \text{(slice mapping + RDMA post)}\\
-  T_{\text{transport}} &= t_{\text{complete}} - t_{\text{post\_start}}
-  & \text{(wire time + CQ drain)}
-\end{align}
 \end{definition}
 
-\begin{theorem}[Bottleneck Identification]
+\begin{theorem}[Bottleneck Identification for BI-V100]
 \label{thm:bottleneck}
-For infccl on BI-V100, the expected stage latencies satisfy:
+For infccl on BI-V100 with $n < 8$~MB:
 \begin{equation}
   \Expect[T_{\text{dispatch}}] \;\gg\; \Expect[T_{\text{transport}}]
   \;\gg\; \Expect[T_{\text{queue}}]
-  \quad\text{for } n < 8\text{MB}
-  \label{eq:dispatch-dominance}
 \end{equation}
-confirming Theorem~\ref{thm:dispatch-dominance} (dispatch overhead dominance).
-This motivates infccl's custom P2P path that bypasses the heavy NCCL dispatch machinery.
+confirming Theorem~\ref{thm:dispatch-dominance}.
 \end{theorem}
 
 
-%% ============================================================================
-%% CHAPTER 14: HUGEPAGE MTT ALIGNMENT
-%% ============================================================================
-\section{Hugepage Memory Registration and MTT Alignment}
-\label{sec:hugepage}
-
-\begin{commitbox}{80eb52cc --- [Store/RDMA] Fix ibv\_reg\_mr failures with 2MB hugepage SHM
-(memfd + MTT alignment)}
-After \texttt{ibv\_fork\_init()}, \texttt{ibv\_reg\_mr} calls \texttt{madvise(MADV\_DONTFORK)},
-and the kernel refuses to split a HugeTLB VMA at non-hugepage-aligned boundaries.
-Fix: widen MR registration to full physical segment bounds.
-\end{commitbox}
-
-\begin{theorem}[Memory Registration Alignment Constraint]
-\label{thm:mtt-align}
-Let $H$ be the hugepage size (2~MB or 1~GB), $A$ the logical allocation size, and
-$P$ the physical segment size ($P = \lceil A/H \rceil \cdot H$).  For RDMA memory
-registration on HugeTLB-backed SHM:
-\begin{equation}
-  \text{MR}[\text{addr}, \text{addr} + L) \text{ succeeds} \iff
-  \text{addr} \equiv 0 \pmod{H} \;\land\; L \equiv 0 \pmod{H}
-  \label{eq:mr-align}
-\end{equation}
-Otherwise, \texttt{madvise(MADV\_DONTFORK)} returns \texttt{EINVAL} because the kernel
-cannot split the HugeTLB VMA.
-\end{theorem}
-
-\begin{proof}
-The Linux kernel maintains VMAs (Virtual Memory Areas) for each mapping.  A HugeTLB
-mapping creates a VMA with page size $H$.  \texttt{madvise} operates on VMA boundaries,
-and splitting a HugeTLB VMA at a non-$H$-aligned offset is forbidden (the PMD/PUD
-page table entries reference $H$-sized pages that cannot be split without TLB shootdown
-and page table surgery).
-
-The fix in the commit is: when registering a buffer that is the base address of a
-HugeTLB \texttt{ShmHelper} segment, use $P$ (rounded up to $H$) instead of $A$ as
-the registration length.  This ensures both start and end are $H$-aligned.
-\end{proof}
-
-
-%% ============================================================================
-%% CHAPTER 15: NCCL RING ALLREDUCE THEORY
-%% ============================================================================
+%% CHAPTER 24: NCCL FUNDAMENTALS
 \section{NCCL Ring/Tree AllReduce Fundamentals}
 \label{sec:nccl}
 
-\begin{commitbox}{NVIDIA/nccl --- 1589 commits analyzed}
-NCCL implements ring allreduce (bandwidth-optimal) and tree allreduce
-(latency-optimal) protocols.  infccl wraps NCCL for large tensors ($\geq 8$~MB)
-on BI-V100 via \texttt{NcclLibrary.all\_reduce()}.
+\begin{commitbox}{NVIDIA/nccl --- 1589 commits; src/device/all\_reduce.h}
+Ring allreduce implementation: \texttt{runRing()} with \texttt{Primitives<T,RedOp,
+FanSymmetric<1>,1,Proto,0>}.  Steps: (1) push data to next GPU
+(\texttt{directSend}), (2) $p-2$ reduce-and-forward steps
+(\texttt{directRecvReduceDirectSend}), (3) final reduce
+(\texttt{directRecvReduceCopySend}), (4) $p-1$ broadcast steps
+(\texttt{directRecvCopyDirectSend}).
 \end{commitbox}
+
+\begin{codeline}{nccl/src/device/all\_reduce.h:14--67}
+\texttt{runRing}: $2(p-1)$ steps total.\\
+Step 0: \texttt{prims.directSend(offset, offset, nelem)} --- push $n/p$ to next.\\
+Steps 1..$p{-}2$: \texttt{prims.directRecvReduceDirectSend} --- reduce-scatter.\\
+Step $p{-}1$: \texttt{prims.directRecvReduceCopySend} --- final reduce + write local.\\
+Steps $p$..$2p{-}3$: \texttt{prims.directRecvCopyDirectSend} --- allgather broadcast.
+\end{codeline}
 
 \begin{theorem}[Ring AllReduce Optimality]
 \label{thm:ring-optimal}
-The ring allreduce algorithm achieves the bandwidth lower bound for $p$ processors:
+The ring allreduce achieves the bandwidth lower bound:
 \begin{equation}
-  T_{\text{ring}}(n, p) \;=\; 2(p-1) \cdot \alpha
-  \;+\; \frac{2(p-1)}{p} \cdot \frac{n}{\beta}
-  \;+\; \frac{(p-1)}{p} \cdot n \cdot \gamma
-  \label{eq:ring-allreduce}
+  T_{\text{ring}}(n, p) \;=\; 2(p-1)\alpha \;+\;
+  \frac{2(p-1)}{p} \cdot \frac{n}{\beta} \;+\;
+  \frac{(p-1)}{p} \cdot n\gamma
 \end{equation}
-where $\alpha$ is latency per step, $\beta$ is bandwidth, and $\gamma$ is computation
-cost per byte for the reduction.  The bandwidth term $2(p-1)n/(p\beta) \to 2n/\beta$
-as $p \to \infty$ matches the lower bound of $2n/\beta$ (each byte must leave and
-return to each processor).
+The bandwidth term $\frac{2(p-1)}{p} \cdot \frac{n}{\beta} \to \frac{2n}{\beta}$
+as $p \to \infty$ matches the information-theoretic lower bound.
 \end{theorem}
 
 \begin{theorem}[Tree AllReduce Latency Advantage]
 \label{thm:tree}
-The tree (recursive halving-doubling) allreduce achieves:
+The tree (recursive halving-doubling) allreduce:
 \begin{equation}
-  T_{\text{tree}}(n, p) \;=\; 2\log_2 p \cdot \alpha
-  \;+\; 2 \cdot \frac{n}{\beta}
-  \;+\; n \cdot \gamma
+  T_{\text{tree}}(n, p) \;=\; 2\log_2 p \cdot \alpha \;+\;
+  2 \cdot \frac{n}{\beta} \;+\; n\gamma
 \end{equation}
-The latency term $2\log_2 p \cdot \alpha$ is optimal for $p$ processors.
+Latency term $O(\log p)$ vs ring's $O(p)$, but bandwidth term $2n/\beta$ vs
+ring's $2(p-1)n/(p\beta) \approx 2n/\beta$: tree is better for small $n$
+(latency-bound), ring for large $n$ (bandwidth-bound).
 \end{theorem}
 
 \begin{corollary}[infccl Protocol Selection]
-For BI-V100 ($p=4$, $\alpha_{\text{P2P}} = 30\mu$s, $\beta_{\text{PCIe}} = 16$~GB/s):
-\begin{align}
-  T_{\text{ring}}(n, 4) &= 6 \cdot 30\mu\text{s} + \frac{3n}{2 \cdot 16\text{GB/s}}\\
-  T_{\text{P2P}}(n, 4) &= 30\mu\text{s} + \frac{n}{16\text{GB/s}}
-  \quad\text{(two-phase custom)}
-\end{align}
-At $n = 1$~MB: $T_{\text{ring}} \approx 274\mu$s, $T_{\text{P2P}} \approx 93\mu$s.
-At $n = 64$~MB: $T_{\text{ring}} \approx 6.2$~ms, $T_{\text{P2P}} \approx 4.0$~ms.
-The custom P2P is faster at all sizes for $p=4$ PCIe; infccl uses the 8~MB threshold
-as a safety boundary for non-ideal P2P topologies.
+For BI-V100 ($p=4$):
+$T_{\text{ring}}(n, 4) = 6 \cdot 30\mu\text{s} + 3n/(2 \cdot 16\text{GB/s})$;
+$T_{\text{P2P}}(n, 4) = 30\mu\text{s} + n/(16\text{GB/s})$.
+At $n = 1$~MB: ring $\approx 274\mu$s, P2P $\approx 93\mu$s.
+Custom P2P wins at all sizes for $p=4$ PCIe; 8~MB threshold as safety boundary.
 \end{corollary}
 
 
 %% ============================================================================
-%% CHAPTER 16: COMPREHENSIVE COMMIT-THEOREM MAP
+%% UNIFIED MODEL
 %% ============================================================================
-\section{Comprehensive Commit $\longleftrightarrow$ Theorem Correspondence}
-\label{sec:map}
 
-The following table maps every major Mooncake commit to its corresponding mathematical
-theorem, with the key code lines that implement the theoretical construct.
+\part{Unified Theory}
 
-\begin{small}
-\begin{longtable}{p{1.8cm}p{5cm}p{2.2cm}p{4.5cm}}
-\toprule
-\textbf{Commit} & \textbf{Description} & \textbf{Theorem} & \textbf{Key Code Lines} \\
-\midrule
-\endfirsthead
-\toprule
-\textbf{Commit} & \textbf{Description} & \textbf{Theorem} & \textbf{Key Code Lines} \\
-\midrule
-\endhead
-\midrule
-\multicolumn{4}{r}{\textit{continued on next page}} \\
-\bottomrule
-\endfoot
-\bottomrule
-\endlastfoot
-
-\texttt{559f83cb} &
-Signal every N RDMA WRs; per-QP FIFO &
-Thm~\ref{thm:cqe-reduction} &
-\texttt{rdma\_posted\_fifo.h:36--58}
-\texttt{shouldSignalRdmaWr()} \\
-
-\texttt{50bf509b} &
-Intern SegmentDesc NIC paths &
-Thm~\ref{thm:string-intern} &
-\texttt{transfer\_metadata.cpp:36--50}
-\texttt{InternNicPath()} \\
-
-\texttt{675ca5c6} &
-Batched enqueue; atomic rail count &
-Thm~\ref{thm:mutex-coalesce}, Lem~\ref{lem:rail-count} &
-\texttt{worker\_pool.cpp:250--268}
-\texttt{enqueueSlicesToOwner()} \\
-
-\texttt{0531a521} &
-TCP admission by queued bytes &
-Thm~\ref{thm:mm1k} &
-\texttt{tcp\_transport\_lane\_impl.h: 146--170}
-\texttt{hasQueuedByteCapacityLocked()} \\
-
-\texttt{4a760599} &
-PCI root topology for Data Direct &
-Thm~\ref{thm:affinity}, Cor~\ref{cor:biv100-topo} &
-\texttt{rdma\_transport.cpp}
-\texttt{discoverCudaTopology()} \\
-
-\texttt{0be31669} &
-Deadline-aware BW arbitration &
-Thm~\ref{thm:mlu-sched}, Def~\ref{def:mlu} &
-\texttt{bw\_arbitration.h}
-\texttt{OrderByUrgency()} \\
-
-\texttt{a2966b6a} &
-Causal chain stage decomposition &
-Def~\ref{def:causal-chain}, Thm~\ref{thm:bottleneck} &
-\texttt{transport.h} stage timestamps \\
-
-\texttt{80eb52cc} &
-Hugepage MTT alignment fix &
-Thm~\ref{thm:mtt-align} &
-\texttt{transfer\_metadata.cpp}
-\texttt{register\_buffer\_internal()} \\
-
-\texttt{662cd44d} &
-Per-tenant eviction watermark &
-Thm~\ref{thm:cache-hit} &
-Store eviction controller \\
-
-\texttt{b140aa92} &
-Dynamic replication controller &
-Thm~\ref{thm:cache-hit} (repl.\ factor) &
-MasterService replication loop \\
-
-\texttt{4a91ce7f} &
-Metered wire rate; MLU prediction &
-Thm~\ref{thm:mlu-sched} &
-\texttt{PredictedMlu()} \\
-
-\texttt{89faca87} &
-Skip in-flight walk for RDMA &
-Thm~\ref{thm:cqe-reduction} (corollary) &
-\texttt{getBatchTransferStatus()} fast path \\
-
-\texttt{9acd3da3} &
-RDMA idle spin window config &
-Lem~\ref{lem:sq-occupancy} &
-\texttt{MC\_RDMA\_IDLE\_SPIN\_US} \\
-
-\texttt{1016469a} &
-Reuse batch-local RDMA transport &
-Thm~\ref{thm:string-intern} (batch) &
-Single-device preparation reuse \\
-
-\texttt{c3aff0cd} &
-Reuse TCP CUDA staging across chunks &
-Thm~\ref{thm:cpp} &
-Staging buffer pool \\
-
-\texttt{12369c0e} &
-TenantIdRef zero-copy variant &
-Thm~\ref{thm:string-intern} (generalized) &
-\texttt{NormalizeTenantIdRef()} \\
-
-\texttt{ef95eb56} &
-Conductor KV event manager &
-Thm~\ref{thm:greedy-ttft} &
-Event-driven scheduling \\
-
-\texttt{dd77ce88} &
-NCCL device route (LSA+GIN) &
-Thm~\ref{thm:ring-optimal} &
-Process Group collective framework \\
-
-\texttt{20fc0bc4} &
-IBGDA route for device collectives &
-Thm~\ref{thm:dispatch-dominance} &
-GPU-side RDMA posting \\
-
-\texttt{38ee4194} &
-Bound handshake pending-notify queue &
-Thm~\ref{thm:mm1k} (bounded queue) &
-\texttt{handshake\_daemon} queue cap \\
-
-\texttt{5c82be77} &
-Pin BatchDesc across completions &
-Lem~\ref{lem:sq-occupancy} (lifetime) &
-UAF prevention in completion path \\
-
-\texttt{9e6872fc} &
-NUMA location after MR registration &
-Thm~\ref{thm:affinity} (NUMA) &
-Post-registration NUMA resolve \\
-
-\texttt{c3fa13ec} &
-THP interleave across NUMA for EFA &
-Thm~\ref{thm:affinity} (memory) &
-Transparent Huge Pages + interleave \\
-
-\texttt{4d083ed6} &
-Promotion retry on cached object &
-Thm~\ref{thm:cache-hit} (retry) &
-Object-level retry candidate list \\
-
-\texttt{17b414a1} &
-HA leadership through oplog catch-up &
---- (consistency) &
-Raft-like leader election \\
-
-\texttt{FAST25 Eq.1} &
-Prefill FLOP model &
-Def~\ref{def:prefill-flops}, Thm~\ref{thm:kv-reuse} &
-$l(an^2d + bnd^2)$ \\
-
-\texttt{FAST25 Alg.1} &
-KVCache-centric scheduling &
-Thm~\ref{thm:greedy-ttft} &
-Conductor algorithm \\
-
-\end{longtable}
-\end{small}
-
-
-%% ============================================================================
-%% CHAPTER 17: UNIFIED THEORY FOR INFCCL
-%% ============================================================================
 \section{Unified Theory: infccl on BI-V100}
 \label{sec:unified}
 
@@ -1142,25 +1399,197 @@ For a tensor of $n$ bytes undergoing allreduce across $p=4$ BI-V100 GPUs:
 }
 \label{eq:infccl-model}
 \end{equation}
-where:
-\begin{align}
-  \alpha_{\text{P2P}} &\approx 30\;\mu\text{s}
-  & \text{(CUDA IPC + event sync)}\\
-  \alpha_{\text{reduce}} &\approx n/(4 \times 900\;\text{GB/s})
-  & \text{(local HBM reduce, 900~GB/s per GPU)}\\
-  \alpha_{\text{NCCL}} &\approx 200\;\mu\text{s}
-  & \text{(NCCL bootstrap on CUDA 10.2)}\\
-  \beta_{\text{P2P}} = \beta_{\text{ring}} &\approx 16\;\text{GB/s}
-  & \text{(PCIe 3.0 x16)}\\
-  n^* &\approx 8\;\text{MB}
-  & \text{(Prop.~\ref{prop:threshold} with safety margin)}
-\end{align}
-With coalescing of $k$ small tensors (Thm~\ref{thm:coalesce}), the effective latency is:
+where $\alpha_{\text{P2P}} \approx 30\mu$s, $\alpha_{\text{NCCL}} \approx 200\mu$s,
+$\beta = 16$~GB/s, $n^* \approx 8$~MB.
+With coalescing of $k$ tensors:
 \begin{equation}
   T_{\text{coalesced}}(n_1,\ldots,n_k) \;=\;
   2k\alpha_{\text{copy}} + T_{\text{infccl}}\!\left(\sum_{i=1}^k n_i\right)
 \end{equation}
 \end{theorem}
+
+
+%% ============================================================================
+%% COMPREHENSIVE MAP
+%% ============================================================================
+\section{Comprehensive Commit $\longleftrightarrow$ Theorem Correspondence}
+\label{sec:map}
+
+\begin{small}
+\begin{longtable}{p{1.6cm}p{4.5cm}p{2.5cm}p{4.5cm}}
+\toprule
+\textbf{Commit} & \textbf{Description} & \textbf{Theorem} & \textbf{Key Code Lines} \\
+\midrule
+\endfirsthead
+\toprule
+\textbf{Commit} & \textbf{Description} & \textbf{Theorem} & \textbf{Key Code Lines} \\
+\midrule
+\endhead
+\midrule
+\multicolumn{4}{r}{\textit{continued}} \\
+\bottomrule
+\endfoot
+\bottomrule
+\endlastfoot
+
+\texttt{559f83cb} & Signal every N RDMA WRs; per-QP FIFO &
+  Thm~\ref{thm:cqe-reduction}, Lem~\ref{lem:flush-err} &
+  \texttt{rdma\_posted\_fifo.h:36--58; config.h:60--63} \\
+
+\texttt{50bf509b} & Intern SegmentDesc NIC paths &
+  Thm~\ref{thm:string-intern} &
+  \texttt{transfer\_metadata.cpp:36--50 InternNicPath()} \\
+
+\texttt{675ca5c6} & Batched enqueue; atomic rail count &
+  Thm~\ref{thm:mutex-coalesce}, Lem~\ref{lem:rail-count} &
+  \texttt{worker\_pool.cpp:250--268 enqueueSlicesToOwner()} \\
+
+\texttt{0531a521} & TCP admission by queued bytes &
+  Thm~\ref{thm:mm1k} &
+  \texttt{tcp\_transport\_lane\_impl.h:146--170} \\
+
+\texttt{38ee4194} & Bound handshake pending-notify queue &
+  Cor~\ref{cor:handshake-bound} &
+  \texttt{handshake\_daemon} queue cap \\
+
+\texttt{84b2d91c} & EDF dispatch in admission queue &
+  Thm~\ref{thm:edf-optimal}, Lem~\ref{lem:undeadlined} &
+  \texttt{admission\_queue.cpp:27--33 deadlineKey()} \\
+
+\texttt{4188e3ae} & Deadline proximity promotion &
+  Thm~\ref{thm:edf-optimal} &
+  Dispatch reordering by proximity \\
+
+\texttt{09c32f9b} & Deadline-infeasible drop + degradation &
+  Thm~\ref{thm:degradation}, Def~\ref{def:degradation} &
+  \texttt{admission\_queue.cpp pickForDispatch()} \\
+
+\texttt{930cb62a} & Live RDMA BW into degradation policy &
+  Thm~\ref{thm:ewma} &
+  \texttt{getEstimatedBandwidth()} DeviceSelector \\
+
+\texttt{4a91ce7f} & Metered wire rate; MLU prediction &
+  Cor~\ref{cor:predicted-mlu} &
+  \texttt{PredictedMlu()} with bytes\_ahead \\
+
+\texttt{0be31669} & Deadline-aware BW arbitration &
+  Thm~\ref{thm:mlu-sched}, Def~\ref{def:mlu} &
+  \texttt{bw\_arbitration.h OrderByUrgency()} \\
+
+\texttt{3f249c5a} & CMS frequency admission + LRU lock opt &
+  Thm~\ref{thm:cms-error}, \ref{thm:freq-admission} &
+  \texttt{count\_min\_sketch.h:1--88} \\
+
+\texttt{cae02bbc} & Half-Open rail state machine &
+  Thm~\ref{thm:rail-recovery}, Def~\ref{def:rail-fsm} &
+  \texttt{rail\_monitor isAvailable/admit split} \\
+
+\texttt{84df45a9} & Credit-based P2P flow control &
+  Thm~\ref{thm:credit-flow} &
+  \texttt{P2PChunkPool, ExtensionState} \\
+
+\texttt{4a760599} & PCI root topology for Data Direct &
+  Thm~\ref{thm:affinity}, Cor~\ref{cor:biv100-topo} &
+  \texttt{discoverCudaTopology()} \\
+
+\texttt{9e6872fc} & NUMA location after MR registration &
+  Thm~\ref{thm:numa-mr} &
+  Post-registration NUMA resolve \\
+
+\texttt{c3fa13ec} & THP interleave across NUMA for EFA &
+  Thm~\ref{thm:thp-interleave} &
+  THP + mbind interleave \\
+
+\texttt{80eb52cc} & Hugepage MTT alignment fix &
+  Thm~\ref{thm:mtt-align} &
+  \texttt{register\_buffer\_internal()} \\
+
+\texttt{7a938fb3} & Auto-chunk MRs $>$ max\_mr\_size &
+  Thm~\ref{thm:chunked-mr} &
+  MR chunking with stride \\
+
+\texttt{cfafbfb7} & Bound RDMA batch MR registration &
+  Thm~\ref{thm:chunked-mr} &
+  Concurrent registration limit \\
+
+\texttt{3ac7de25} & Lock-free MmapArena allocator &
+  Thm~\ref{thm:lock-free-arena} &
+  CAS bump allocator \\
+
+\texttt{98ebebf4} & Strict multi-tenant quota admission &
+  Def~\ref{def:tenant-quota} &
+  Tenant capacity enforcement \\
+
+\texttt{15972687} & Lock-free tenant quota charge/release &
+  Thm~\ref{thm:lock-free-quota} &
+  \texttt{fetch\_add/fetch\_sub} relaxed \\
+
+\texttt{662cd44d} & Per-tenant eviction watermark &
+  Thm~\ref{thm:cache-hit} &
+  Store eviction controller \\
+
+\texttt{b140aa92} & Dynamic replication controller &
+  Thm~\ref{thm:cache-hit} (repl.\ factor) &
+  MasterService replication loop \\
+
+\texttt{4d083ed6} & Promotion retry on cached object &
+  Thm~\ref{thm:freq-gated} &
+  Object-level retry candidate list \\
+
+\texttt{c3aff0cd} & Reuse TCP CUDA staging across chunks &
+  Thm~\ref{thm:cpp} &
+  Staging buffer pool \\
+
+\texttt{a2966b6a} & Causal chain stage decomposition &
+  Def~\ref{def:causal-chain}, Thm~\ref{thm:bottleneck} &
+  Stage timestamps \\
+
+\texttt{617a01f5} & Request deadline\_ns + MLU observability &
+  Def~\ref{def:mlu} &
+  MLU metric in TENT \\
+
+\texttt{3adc6362} & Local admission queue prototype &
+  Thm~\ref{thm:mm1k} &
+  Runtime queue foundation \\
+
+\texttt{5c82e077} & Pin BatchDesc across completions &
+  Lem~\ref{lem:sq-occupancy} &
+  UAF prevention in completion \\
+
+\texttt{89faca87} & Skip in-flight task walk for RDMA &
+  Thm~\ref{thm:cqe-reduction} &
+  \texttt{getBatchTransferStatus()} fast path \\
+
+\texttt{12369c0e} & TenantIdRef zero-copy variant &
+  Thm~\ref{thm:string-intern} &
+  \texttt{NormalizeTenantIdRef()} \\
+
+\texttt{1016469a} & Reuse batch-local RDMA transport &
+  Thm~\ref{thm:string-intern} (batch) &
+  Single-device preparation reuse \\
+
+\texttt{1e098162} & Rate-limit TENT failure-storm logs &
+  Thm~\ref{thm:rail-recovery} &
+  Cooldown defect fixes \\
+
+\texttt{FAST25 Eq.1} & Prefill FLOP model &
+  Def~\ref{def:prefill-flops}, Thm~\ref{thm:kv-reuse} &
+  $l(an^2d + bnd^2)$ \\
+
+\texttt{FAST25 Alg.1} & KVCache-centric scheduling &
+  Thm~\ref{thm:greedy-ttft} &
+  Conductor algorithm \\
+
+\texttt{NCCL ring} & Ring allreduce ($2(p{-}1)$ steps) &
+  Thm~\ref{thm:ring-optimal} &
+  \texttt{all\_reduce.h runRing()} \\
+
+\texttt{NCCL tree} & Tree allreduce ($\log p$ depth) &
+  Thm~\ref{thm:tree} &
+  \texttt{all\_reduce.h runTreeSplit()} \\
+
+\end{longtable}
+\end{small}
 
 
 %% ============================================================================
@@ -1176,7 +1605,7 @@ With coalescing of $k$ small tensors (Thm~\ref{thm:coalesce}), the effective lat
 \midrule
 $l$ & Number of transformer layers \\
 $d$ & Model dimension \\
-$n$ & Input sequence length (tokens) \\
+$n$ & Input sequence length (tokens) or tensor size (bytes) \\
 $p$ & Prefix match length / number of GPUs (context-dependent) \\
 $s$ & Element size in bytes \\
 $\text{gqa}$ & Group Query Attention ratio \\
@@ -1185,10 +1614,39 @@ $B, \beta$ & Transfer bandwidth (GB/s) \\
 $\alpha$ & Per-operation latency / dispatch overhead ($\mu$s) \\
 $W$ & RDMA Send Queue depth \\
 $k$ & Signal interval / coalescing count \\
-$C$ & Cache capacity (blocks or CQ entries, context-dependent) \\
-$K$ & Bounded queue capacity \\
+$C$ & Cache capacity (blocks or CQ entries) \\
+$K$ & Bounded queue capacity (bytes or slots) \\
 $\lambda, \mu$ & Arrival rate, service rate \\
 $\rho$ & Traffic intensity $\lambda/\mu$ \\
+$\theta_{\text{local}}$ & MLU threshold for deadline-infeasible drop \\
+$\hat{B}_t$ & EWMA bandwidth estimate at time $t$ \\
+$\text{MLU}(s)$ & Machine Load Unit for slice $s$ \\
+$\text{CMS}(w,d)$ & Count-Min Sketch with width $w$, depth $d$ \\
+$\tau_k$ & Exponential backoff cooldown at failure count $k$ \\
+$Q_t, U_t$ & Tenant quota and current usage \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+
+\section{Theorem Index by Commit Count}
+
+\begin{center}
+\begin{tabular}{lrl}
+\toprule
+\textbf{Theorem Category} & \textbf{Commits} & \textbf{Key Theorem} \\
+\midrule
+RDMA Transport Optimization & 426 & Thm~\ref{thm:cqe-reduction}, \ref{thm:string-intern}, \ref{thm:mutex-coalesce} \\
+Store / Cache / Eviction & 789 & Thm~\ref{thm:cache-hit}, \ref{thm:cms-error}, \ref{thm:freq-gated} \\
+Admission / Scheduling & 91 & Thm~\ref{thm:edf-optimal}, \ref{thm:mlu-sched}, \ref{thm:degradation} \\
+Topology / NUMA / Memory & 58 & Thm~\ref{thm:affinity}, \ref{thm:mtt-align}, \ref{thm:chunked-mr} \\
+Process Group / Collective & 91 & Thm~\ref{thm:ring-optimal}, \ref{thm:credit-flow} \\
+TENT Failover / State Machine & 45 & Thm~\ref{thm:rail-recovery} \\
+Bandwidth Estimation & 12 & Thm~\ref{thm:ewma} \\
+Prefill / Scheduling & 50 & Thm~\ref{thm:kv-reuse}, \ref{thm:greedy-ttft}, \ref{thm:cpp} \\
+infccl Specific & 20 & Thm~\ref{thm:dispatch-dominance}, \ref{thm:coalesce}, \ref{thm:infccl-e2e} \\
+\midrule
+\textbf{Total} & \textbf{1582} & \textbf{42 theorems} \\
 \bottomrule
 \end{tabular}
 \end{center}
