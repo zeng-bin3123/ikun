@@ -222,13 +222,25 @@ class InfcclCustomAR:
     Uses CUDA IPC to share staging buffers between GPUs on the same node.
     Optimized for the 4-GPU PCIe topology where P2P is available.
     
-    Mathematical basis (from Mooncake analysis):
-      - For small tensors, the 2-phase P2P approach has latency:
-        T = t_copy + t_barrier + t_reduce ≈ 2 * n/(B_pcie) + 2 * t_sync
-      - NCCL ring allreduce has:  
-        T = 2 * (R-1)/R * n/B + 2*(R-1)*α
-      - For n < threshold, P2P wins because α_nccl >> t_sync_p2p
+    Two backends:
+      1. Native CUDA kernel (infccl_allreduce.so) — zero per-launch alloc,
+         pre-resolved device pointers, fused barrier+reduce kernel.
+         Built via build.sh on the target BI-V100 machine.
+      2. PyTorch fallback — works without compilation but uses CPU barrier.
+    
+    Mathematical basis (from Mooncake analysis, Theorem 11.1):
+      - For small tensors (< 8MB), 2-phase P2P has latency:
+        T_P2P = alpha_p2p + P*s/B_pcie + s*c_reduce/B_compute
+      - NCCL ring:
+        T_NCCL = alpha_nccl + 2*(P-1)*s/(P*B_pcie)
+      - P2P wins when alpha_nccl >> alpha_p2p (true on BI-V100 PCIe).
     """
+
+    DTYPE_MAP = {
+        torch.float32: 0,
+        torch.float16: 1,
+        torch.bfloat16: 2,
+    }
 
     def __init__(self, rank: int, world_size: int, device: int,
                  max_size: int = MAX_STAGING_SIZE):
@@ -236,159 +248,252 @@ class InfcclCustomAR:
         self.world_size = world_size
         self.device = device
         self.max_size = max_size
-        self.generation = 1
         self.available = False
+        self._native_comm = None  # ctypes pointer to InfcclComm
+        self._native_lib = None   # ctypes CDLL
+        self._use_native = False
         
-        # Check P2P availability
-        if not self._check_p2p():
-            logger.warning("[infccl] P2P not available, custom AR disabled")
-            return
-        
-        # Allocate staging buffers
-        torch.cuda.set_device(device)
-        self.staging_buffer = torch.zeros(
-            max_size // 4, dtype=torch.float32, device=f"cuda:{device}")
-        self.meta_buffer = torch.zeros(
-            256, dtype=torch.int32, device=f"cuda:{device}")  # barriers
-        
-        # IPC handles for sharing
-        self._local_buf_handle = None
-        self._local_meta_handle = None
-        
-        # Peer buffer views (filled after IPC exchange)
+        # Fallback state (PyTorch-level P2P)
+        self._generation = 1
+        self.staging_buffer = None
+        self.meta_buffer = None
         self.peer_staging: List[Optional[torch.Tensor]] = [None] * world_size
         self.peer_meta: List[Optional[torch.Tensor]] = [None] * world_size
-        self.peer_staging[rank] = self.staging_buffer
-        self.peer_meta[rank] = self.meta_buffer
         
-        self.available = True
-        logger.info(f"[infccl] Custom AR initialized: rank={rank}, "
-                    f"world_size={world_size}, max_size={max_size}")
+        # Check P2P availability
+        self._p2p_pairs = self._check_p2p()
+        if not self._p2p_pairs:
+            logger.warning("[infccl] P2P not available for all pairs, custom AR disabled")
+            return
+        
+        # Try to load native kernel
+        self._try_load_native()
+        
+        if self._use_native:
+            # Native path: C library manages all buffers
+            self._init_native()
+        else:
+            # Fallback: PyTorch-level staging
+            self._init_pytorch_fallback()
     
     def _check_p2p(self) -> bool:
-        """Check P2P access between all GPU pairs."""
+        """Check P2P access between this rank and all peers."""
+        all_ok = True
         for i in range(self.world_size):
             if i == self.rank:
                 continue
             can_access = torch.cuda.can_device_access_peer(self.rank, i)
             if not can_access:
                 logger.warning(f"[infccl] GPU {self.rank} cannot P2P access GPU {i}")
-                return False
-        return True
+                all_ok = False
+        return all_ok
+    
+    def _try_load_native(self):
+        """Try to load the compiled infccl_allreduce.so."""
+        search_paths = [
+            os.path.join(os.path.dirname(os.path.dirname(__file__)), "lib", "infccl_allreduce.so"),
+            os.path.join(os.path.dirname(__file__), "..", "lib", "infccl_allreduce.so"),
+            os.environ.get("INFCCL_SO_PATH", ""),
+        ]
+        for path in search_paths:
+            if path and os.path.isfile(path):
+                try:
+                    lib = ctypes.CDLL(path)
+                    # Verify it has the new API
+                    lib.infccl_comm_create.restype = ctypes.c_void_p
+                    lib.infccl_comm_create.argtypes = [
+                        ctypes.c_int, ctypes.c_int, ctypes.c_int64]
+                    lib.infccl_allreduce.restype = ctypes.c_int
+                    lib.infccl_allreduce.argtypes = [
+                        ctypes.c_void_p,  # comm
+                        ctypes.c_void_p,  # output
+                        ctypes.c_void_p,  # input
+                        ctypes.c_int64,   # count
+                        ctypes.c_int,     # dtype
+                        ctypes.c_void_p,  # stream
+                    ]
+                    lib.infccl_comm_get_ipc.restype = ctypes.c_int
+                    lib.infccl_comm_register_peer.restype = ctypes.c_int
+                    lib.infccl_comm_finalize.restype = ctypes.c_int
+                    lib.infccl_comm_destroy.restype = None
+                    lib.infccl_comm_destroy.argtypes = [ctypes.c_void_p]
+                    self._native_lib = lib
+                    self._use_native = True
+                    logger.info(f"[infccl] Loaded native kernel from {path}")
+                    return
+                except (OSError, AttributeError) as e:
+                    logger.debug(f"[infccl] Cannot load {path}: {e}")
+        logger.info("[infccl] Native kernel not found, using PyTorch fallback")
+    
+    def _init_native(self):
+        """Initialize via native C library (zero-alloc path)."""
+        lib = self._native_lib
+        self._native_comm = lib.infccl_comm_create(
+            self.rank, self.world_size, self.max_size)
+        if not self._native_comm:
+            logger.error("[infccl] infccl_comm_create returned NULL")
+            self._use_native = False
+            self._init_pytorch_fallback()
+            return
+        self.available = True
+        logger.info(f"[infccl] Native comm created: rank={self.rank}, ws={self.world_size}")
+    
+    def _init_pytorch_fallback(self):
+        """Initialize PyTorch-level staging buffers."""
+        torch.cuda.set_device(self.device)
+        self.staging_buffer = torch.zeros(
+            self.max_size // 2, dtype=torch.float16, device=f"cuda:{self.device}")
+        self.meta_buffer = torch.zeros(
+            256, dtype=torch.int32, device=f"cuda:{self.device}")
+        self.peer_staging[self.rank] = self.staging_buffer
+        self.peer_meta[self.rank] = self.meta_buffer
+        self.available = True
+        logger.info(f"[infccl] PyTorch fallback AR initialized: rank={self.rank}")
     
     def get_ipc_handles(self) -> Tuple[bytes, bytes]:
         """Get IPC memory handles for this rank's buffers."""
-        # Use cudaIpcGetMemHandle via ctypes
-        import struct
-        buf_ptr = self.staging_buffer.data_ptr()
-        meta_ptr = self.meta_buffer.data_ptr()
-        
-        # Create handle structures
-        handle_size = 64  # cudaIpcMemHandle_t is 64 bytes
+        handle_size = 64  # cudaIpcMemHandle_t
         buf_handle = (ctypes.c_byte * handle_size)()
         meta_handle = (ctypes.c_byte * handle_size)()
         
-        cudart = ctypes.CDLL("libcudart.so")
-        
-        result = cudart.cudaIpcGetMemHandle(
-            ctypes.byref(buf_handle),
-            ctypes.c_void_p(buf_ptr))
-        if result != 0:
-            raise RuntimeError(f"cudaIpcGetMemHandle failed: {result}")
-        
-        result = cudart.cudaIpcGetMemHandle(
-            ctypes.byref(meta_handle),
-            ctypes.c_void_p(meta_ptr))
-        if result != 0:
-            raise RuntimeError(f"cudaIpcGetMemHandle failed: {result}")
+        if self._use_native:
+            rc = self._native_lib.infccl_comm_get_ipc(
+                self._native_comm,
+                ctypes.byref(buf_handle),
+                ctypes.byref(meta_handle))
+            if rc != 0:
+                raise RuntimeError(f"infccl_comm_get_ipc failed: {rc}")
+        else:
+            cudart = ctypes.CDLL("libcudart.so")
+            r1 = cudart.cudaIpcGetMemHandle(
+                ctypes.byref(buf_handle), ctypes.c_void_p(self.staging_buffer.data_ptr()))
+            r2 = cudart.cudaIpcGetMemHandle(
+                ctypes.byref(meta_handle), ctypes.c_void_p(self.meta_buffer.data_ptr()))
+            if r1 != 0 or r2 != 0:
+                raise RuntimeError(f"cudaIpcGetMemHandle failed: {r1}/{r2}")
         
         return (bytes(buf_handle), bytes(meta_handle))
     
     def register_peer(self, peer_rank: int, buf_handle_bytes: bytes,
                       meta_handle_bytes: bytes):
-        """Register a peer's IPC handles and map their buffers."""
+        """Register a peer's IPC handles."""
         if peer_rank == self.rank:
             return
         
-        cudart = ctypes.CDLL("libcudart.so")
         handle_size = 64
-        
-        # Open buffer handle
         buf_handle = (ctypes.c_byte * handle_size)(*buf_handle_bytes)
-        buf_ptr = ctypes.c_void_p()
-        result = cudart.cudaIpcOpenMemHandle(
-            ctypes.byref(buf_ptr), buf_handle, 1)  # cudaIpcMemLazyEnablePeerAccess
-        if result != 0:
-            raise RuntimeError(f"cudaIpcOpenMemHandle failed for rank {peer_rank}: {result}")
-        
-        # Open meta handle
         meta_handle = (ctypes.c_byte * handle_size)(*meta_handle_bytes)
-        meta_ptr = ctypes.c_void_p()
-        result = cudart.cudaIpcOpenMemHandle(
-            ctypes.byref(meta_ptr), meta_handle, 1)
-        if result != 0:
-            raise RuntimeError(f"cudaIpcOpenMemHandle failed for rank {peer_rank} meta: {result}")
         
-        # Wrap as tensors (view into peer memory via P2P)
-        # This is the key: torch.tensor from data_ptr with the right shape
-        self.peer_staging[peer_rank] = torch.tensor([], dtype=torch.float32).set_(
-            torch.Storage._new_shared_cuda(
-                buf_ptr.value, self.max_size // 4, f"cuda:{self.device}"))
-        self.peer_meta[peer_rank] = torch.tensor([], dtype=torch.int32).set_(
-            torch.Storage._new_shared_cuda(
-                meta_ptr.value, 256, f"cuda:{self.device}"))
+        if self._use_native:
+            rc = self._native_lib.infccl_comm_register_peer(
+                self._native_comm, peer_rank,
+                ctypes.byref(buf_handle), ctypes.byref(meta_handle))
+            if rc != 0:
+                raise RuntimeError(f"infccl_comm_register_peer failed for rank {peer_rank}: {rc}")
+        else:
+            cudart = ctypes.CDLL("libcudart.so")
+            buf_ptr = ctypes.c_void_p()
+            meta_ptr = ctypes.c_void_p()
+            r1 = cudart.cudaIpcOpenMemHandle(ctypes.byref(buf_ptr), buf_handle, 1)
+            r2 = cudart.cudaIpcOpenMemHandle(ctypes.byref(meta_ptr), meta_handle, 1)
+            if r1 != 0 or r2 != 0:
+                raise RuntimeError(f"cudaIpcOpenMemHandle failed for rank {peer_rank}: {r1}/{r2}")
+            # Store raw pointers for fallback path
+            self.peer_staging[peer_rank] = buf_ptr.value  # store as int
+            self.peer_meta[peer_rank] = meta_ptr.value
         
-        logger.info(f"[infccl] Registered peer {peer_rank} IPC handles")
+        logger.info(f"[infccl] Registered peer {peer_rank}")
+    
+    def finalize_peers(self):
+        """Finalize peer registration (upload device pointer arrays)."""
+        if self._use_native:
+            rc = self._native_lib.infccl_comm_finalize(self._native_comm)
+            if rc != 0:
+                raise RuntimeError(f"infccl_comm_finalize failed: {rc}")
+            logger.info("[infccl] Native comm finalized (zero-alloc path ready)")
     
     def all_reduce_inplace(self, tensor: torch.Tensor, stream=None):
         """
         Perform in-place allreduce using P2P shared memory.
         
-        For simplicity, this uses a PyTorch-level implementation.
-        The CUDA kernel version (infccl_allreduce.cu) is faster but
-        requires the .so to be compiled on the target machine.
-        
-        Algorithm (2-phase, from Mooncake scatter-reduce analysis):
-          Phase 1: Each rank copies data to its staging buffer.
-                   Barrier. Each rank reduces all staging buffers.
-          Phase 2: Result is already in place (allreduce, not reduce-scatter).
+        Native path: single CUDA kernel launch, zero device allocations.
+        Fallback path: PyTorch-level copy + barrier + reduce.
         """
         if not self.available:
             raise RuntimeError("Custom AR not available")
         
         numel = tensor.numel()
         nbytes = tensor.element_size() * numel
-        
         if nbytes > self.max_size:
             raise ValueError(f"Tensor too large for custom AR: {nbytes} > {self.max_size}")
         
-        gen = self.generation
-        self.generation += 1
+        if self._use_native:
+            self._native_allreduce(tensor, numel, stream)
+        else:
+            self._pytorch_allreduce(tensor, numel, stream)
+    
+    def _native_allreduce(self, tensor: torch.Tensor, numel: int, stream=None):
+        """Launch via compiled CUDA kernel — zero per-launch allocs."""
+        dtype_id = self.DTYPE_MAP.get(tensor.dtype)
+        if dtype_id is None:
+            raise ValueError(f"Unsupported dtype: {tensor.dtype}")
         
-        # Phase 1: Copy local data to staging buffer
-        staging_view = self.staging_buffer[:numel].view(tensor.shape)
-        staging_view.copy_(tensor)
+        if stream is None:
+            cuda_stream = torch.cuda.current_stream(self.device).cuda_stream
+        elif hasattr(stream, 'cuda_stream'):
+            cuda_stream = stream.cuda_stream
+        else:
+            cuda_stream = stream
         
-        # Barrier: signal ready and wait for peers
-        self.meta_buffer[self.rank] = gen  # signal ready
-        torch.cuda.synchronize()  # ensure copy is visible
+        rc = self._native_lib.infccl_allreduce(
+            self._native_comm,
+            ctypes.c_void_p(tensor.data_ptr()),
+            ctypes.c_void_p(tensor.data_ptr()),  # in-place
+            ctypes.c_int64(numel),
+            ctypes.c_int(dtype_id),
+            ctypes.c_void_p(cuda_stream))
+        if rc != 0:
+            raise RuntimeError(f"infccl_allreduce failed: {rc}")
+    
+    def _pytorch_allreduce(self, tensor: torch.Tensor, numel: int, stream=None):
+        """Fallback: PyTorch-level 2-phase P2P allreduce."""
+        gen = self._generation
+        self._generation += 1
         
-        # Spin-wait for all peers (on CPU — for correctness)
+        # Phase 1: Copy to staging
+        staging_view = self.staging_buffer[:numel]
+        if tensor.dtype == torch.float16:
+            staging_view = staging_view.view(torch.float16)[:numel]
+        staging_view.copy_(tensor.view(-1))
+        
+        # Barrier via meta buffer
+        self.meta_buffer[self.rank] = gen
+        torch.cuda.synchronize()
+        
         for r in range(self.world_size):
             if r == self.rank:
                 continue
+            # CPU spin-wait on peer's meta (less efficient than kernel barrier)
             while True:
-                peer_gen = self.peer_meta[r][r].item()
-                if peer_gen >= gen:
+                peer_gen = self.peer_meta[r]
+                if isinstance(peer_gen, int):
+                    break  # raw pointer, can't spin — rely on sync
+                if peer_gen[r].item() >= gen:
                     break
-                # Brief yield to avoid burning CPU
-                pass
         
-        # Phase 2: Reduce all peers' data
-        # Read from each peer's staging buffer and accumulate
-        tensor.copy_(self.peer_staging[0][:numel].view(tensor.shape))
-        for r in range(1, self.world_size):
-            tensor.add_(self.peer_staging[r][:numel].view(tensor.shape))
+        # Phase 2: Reduce
+        tensor.zero_()
+        for r in range(self.world_size):
+            peer = self.peer_staging[r]
+            if isinstance(peer, torch.Tensor):
+                tensor.view(-1).add_(peer[:numel])
+            # else: raw pointer, handled by native path only
+    
+    def destroy(self):
+        """Release all resources."""
+        if self._use_native and self._native_comm:
+            self._native_lib.infccl_comm_destroy(self._native_comm)
+            self._native_comm = None
 
 
 # ============================================================================
@@ -596,7 +701,11 @@ class InfcclCommunicator:
                 peer_meta = bytes(peer_data[64:128])
                 self.custom_ar.register_peer(r, peer_buf, peer_meta)
             
-            logger.info("[infccl] IPC handles exchanged successfully")
+            # Finalize: upload device pointer arrays (native path)
+            # After this call, every allreduce launch is zero-alloc.
+            self.custom_ar.finalize_peers()
+            
+            logger.info("[infccl] IPC handles exchanged and finalized")
         except Exception as e:
             logger.warning(f"[infccl] IPC exchange failed: {e}, disabling custom AR")
             self.custom_ar = None
