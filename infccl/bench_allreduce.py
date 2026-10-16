@@ -5,12 +5,15 @@ Benchmark: infccl custom allreduce vs NCCL on BI-V100.
 Run with torchrun:
   torchrun --nproc_per_node=4 infccl/bench_allreduce.py
 
-Measures latency for various tensor sizes to find the crossover point
-where custom P2P allreduce beats NCCL.
+Measures latency for various tensor sizes across three paths:
+  Path 0 (Fused):  ≤ 256KB — all-to-all copy → barrier → local reduce
+  Path 1 (Ring):   256KB~8MB — reduce-scatter + allgather in P-1 steps
+  Path 2 (NCCL):   > 8MB — system NCCL fallback
 
 Expected results on 4× BI-V100 PCIe:
-  - Custom AR wins for tensors < ~4-8 MB (lower NCCL launch overhead)
-  - NCCL wins for tensors > ~8 MB (better bandwidth utilization)
+  - Fused wins for tiny tensors (α-dominated, ~10-15 μs)
+  - Ring wins for medium tensors (bandwidth-optimal, 2*(P-1)/P wire traffic)
+  - NCCL wins for large tensors (> 8MB, ring/tree with kernel overlap)
 """
 
 import os
