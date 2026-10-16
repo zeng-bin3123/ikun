@@ -15,3 +15,12 @@ core/build*/
 *.a
 *.so
 __pycache__/
+
+# Build artifacts
+build_off/
+build_on/
+build_runner/
+build_cmake_off/
+build_cmake_on/
+*.o
+*.a

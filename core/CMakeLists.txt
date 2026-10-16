@@ -38,6 +38,7 @@ set(ILU_SOURCES
   framework/parallel_state/mapping_ilu.cpp
   distributed_runtime/layerwise_split_engine_ext.cpp
   distributed_runtime/layerwise_split_master.cpp
+  distributed_runtime/ikun_collective_runner.cpp
 )
 
 # ---------- layerwise split KV cache library ----------
@@ -54,6 +55,7 @@ target_include_directories(layerwise_split_kv PUBLIC
 target_link_libraries(layerwise_split_kv PUBLIC
   gflags
   PkgConfig::GLOG
+  dl
 )
 
 # Iluvatar BI-V100 build: define USE_ILU so the #if guards activate
