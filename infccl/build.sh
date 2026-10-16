@@ -1,46 +1,54 @@
 #!/usr/bin/env bash
 # Build infccl shared library for Iluvatar BI-V100
-#
-# Usage:
-#   ./build.sh             # auto-detect compiler
-#   NVCC=/path/to/nvcc ./build.sh  # explicit compiler
-#
-# The BI-V100 uses CoreX SDK with CUDA 10.2 compatible toolchain.
-# The clang-based compiler is at /usr/local/corex/bin/clang++
-# but we can also use the nvcc wrapper if available.
-
+# CoreX SDK uses clang++ with --cuda-gpu-arch=ivcore10
 set -eo pipefail
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
 OUTDIR="$(pwd)/lib"
 mkdir -p "$OUTDIR"
 
-# Detect compiler
-if [ -n "$NVCC" ]; then
-    echo "[infccl] Using NVCC=$NVCC"
-elif command -v /usr/local/corex/bin/nvcc &>/dev/null; then
-    NVCC=/usr/local/corex/bin/nvcc
-    echo "[infccl] Using CoreX nvcc: $NVCC"
-elif command -v nvcc &>/dev/null; then
-    NVCC=nvcc
-    echo "[infccl] Using system nvcc: $(which nvcc)"
+# Detect CoreX root
+for candidate in "${COREX_ROOT}" /usr/local/corex /usr/local/corex-3.2.3; do
+    [ -z "$candidate" ] && continue
+    if [ -x "${candidate}/bin/clang++" ]; then
+        COREX_ROOT="$candidate"
+        break
+    fi
+done
+
+CXX="${COREX_ROOT:-/usr/local/corex}/bin/clang++"
+
+if [ ! -x "$CXX" ]; then
+    # Fallback to nvcc
+    for nvcc_candidate in /usr/local/corex/bin/nvcc /usr/local/corex-3.2.3/bin/nvcc /usr/local/cuda/bin/nvcc nvcc; do
+        if command -v "$nvcc_candidate" &>/dev/null 2>&1 || [ -x "$nvcc_candidate" ]; then
+            NVCC="$nvcc_candidate"
+            break
+        fi
+    done
+    if [ -n "$NVCC" ]; then
+        echo "[infccl] Using nvcc: $NVCC"
+        $NVCC -arch=sm_70 -O3 -shared -Xcompiler -fPIC \
+            -o "$OUTDIR/infccl_allreduce.so" csrc/infccl_allreduce.cu -lcudart
+    else
+        echo "[infccl] ERROR: No CUDA compiler found" >&2
+        exit 1
+    fi
 else
-    echo "[infccl] ERROR: No CUDA compiler found" >&2
-    exit 1
+    echo "[infccl] Using CoreX clang++: $CXX"
+    "$CXX" -std=c++17 -O3 -shared -fPIC \
+        --cuda-path="${COREX_ROOT}" \
+        --cuda-gpu-arch=ivcore10 \
+        --no-cuda-version-check \
+        -I"${COREX_ROOT}/include" \
+        -L"${COREX_ROOT}/lib64" \
+        -Wl,-rpath,"${COREX_ROOT}/lib64" \
+        -lcudart \
+        -o "$OUTDIR/infccl_allreduce.so" csrc/infccl_allreduce.cu
 fi
 
-# Detect architecture
-# BI-V100 is SM 7.0 compatible (V100 class)
-ARCH_FLAGS="-arch=sm_70"
+echo "[infccl] Exported symbols:"
+nm -D "$OUTDIR/infccl_allreduce.so" 2>/dev/null | grep ' T infccl_' || true
 
-echo "[infccl] Building infccl_allreduce.so ..."
-$NVCC $ARCH_FLAGS -O3 -shared -Xcompiler -fPIC \
-    -o "$OUTDIR/infccl_allreduce.so" \
-    csrc/infccl_allreduce.cu \
-    -lcudart -lcuda
-
-echo "[infccl] Built: $OUTDIR/infccl_allreduce.so"
 ls -lh "$OUTDIR/infccl_allreduce.so"
-
 echo "[infccl] Build complete."
-
