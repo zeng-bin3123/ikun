@@ -177,6 +177,29 @@ class NcclLibrary:
             cudaStream_t,     # stream
         ]
         
+        # ncclReduceScatter
+        lib.ncclReduceScatter.restype = ncclResult_t
+        lib.ncclReduceScatter.argtypes = [
+            buffer_type,      # sendbuff
+            buffer_type,      # recvbuff
+            ctypes.c_size_t,  # recvcount (per rank)
+            ncclDataType_t,   # datatype
+            ncclRedOp_t,      # op
+            ncclComm_t,       # comm
+            cudaStream_t,     # stream
+        ]
+        
+        # ncclAllGather
+        lib.ncclAllGather.restype = ncclResult_t
+        lib.ncclAllGather.argtypes = [
+            buffer_type,      # sendbuff
+            buffer_type,      # recvbuff
+            ctypes.c_size_t,  # sendcount (per rank)
+            ncclDataType_t,   # datatype
+            ncclComm_t,       # comm
+            cudaStream_t,     # stream
+        ]
+        
         # ncclCommDestroy
         lib.ncclCommDestroy.restype = ncclResult_t
         lib.ncclCommDestroy.argtypes = [ncclComm_t]
@@ -844,6 +867,158 @@ class InfcclCommunicator:
             for t in tensors:
                 self.all_reduce(t, op, stream)
     
+    def reduce_scatter(
+        self,
+        output: torch.Tensor,
+        input_tensor: torch.Tensor,
+        op: ReduceOp = ReduceOp.SUM,
+        stream=None,
+    ):
+        """
+        ReduceScatter: reduce input across all ranks, scatter result.
+        
+        Each rank provides input_tensor (same size), and receives 1/P of
+        the reduced result in output. Used in TP column-parallel Linear.
+        
+        Args:
+            output: tensor of size input_tensor.numel() / world_size
+            input_tensor: tensor to reduce (same size on all ranks)
+            op: reduction operation (only SUM supported for custom path)
+            stream: CUDA stream
+        """
+        if self.disabled or not self.available:
+            return
+        
+        if self.world_size == 1:
+            output.copy_(input_tensor)
+            return
+        
+        # Try custom path for small tensors
+        nbytes = input_tensor.numel() * input_tensor.element_size()
+        if (self.custom_ar is not None
+            and self.custom_ar._use_native
+            and nbytes <= CUSTOM_AR_THRESHOLD_BYTES
+            and op == ReduceOp.SUM
+            and input_tensor.is_contiguous()):
+            dtype_id = InfcclCustomAR.DTYPE_MAP.get(input_tensor.dtype)
+            if dtype_id is not None:
+                lib = self.custom_ar._native_lib
+                try:
+                    lib.infccl_reduce_scatter.restype = ctypes.c_int
+                    lib.infccl_reduce_scatter.argtypes = [
+                        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                        ctypes.c_int64, ctypes.c_int, ctypes.c_void_p]
+                except AttributeError:
+                    pass  # v1 library, fall through to NCCL
+                else:
+                    cuda_stream = stream
+                    if cuda_stream is None:
+                        cuda_stream = torch.cuda.current_stream(self.device).cuda_stream
+                    elif hasattr(cuda_stream, 'cuda_stream'):
+                        cuda_stream = cuda_stream.cuda_stream
+                    
+                    rc = lib.infccl_reduce_scatter(
+                        self.custom_ar._native_comm,
+                        ctypes.c_void_p(output.data_ptr()),
+                        ctypes.c_void_p(input_tensor.data_ptr()),
+                        ctypes.c_int64(input_tensor.numel()),
+                        ctypes.c_int(dtype_id),
+                        ctypes.c_void_p(cuda_stream))
+                    if rc == 0:
+                        return
+        
+        # NCCL fallback
+        if stream is None:
+            cuda_stream = torch.cuda.current_stream(self.device).cuda_stream
+        elif hasattr(stream, 'cuda_stream'):
+            cuda_stream = stream.cuda_stream
+        else:
+            cuda_stream = stream
+        
+        self.nccl.lib.ncclReduceScatter(
+            ctypes.c_void_p(input_tensor.data_ptr()),
+            ctypes.c_void_p(output.data_ptr()),
+            output.numel(),
+            NcclDataTypeEnum.from_torch(input_tensor.dtype),
+            NcclRedOpEnum.from_torch(op),
+            self.comm,
+            ctypes.c_void_p(cuda_stream),
+        )
+    
+    def all_gather(
+        self,
+        output: torch.Tensor,
+        input_tensor: torch.Tensor,
+        stream=None,
+    ):
+        """
+        AllGather: each rank contributes input_tensor, output has all concatenated.
+        
+        Each rank provides input_tensor (size S), and receives output of size S*P
+        with all ranks' inputs concatenated. Used in TP row-parallel Linear.
+        
+        Args:
+            output: tensor of size input_tensor.numel() * world_size
+            input_tensor: this rank's contribution
+            stream: CUDA stream
+        """
+        if self.disabled or not self.available:
+            return
+        
+        if self.world_size == 1:
+            output.copy_(input_tensor)
+            return
+        
+        # Try custom path
+        nbytes = output.numel() * output.element_size()
+        if (self.custom_ar is not None
+            and self.custom_ar._use_native
+            and nbytes <= CUSTOM_AR_THRESHOLD_BYTES
+            and input_tensor.is_contiguous()):
+            dtype_id = InfcclCustomAR.DTYPE_MAP.get(input_tensor.dtype)
+            if dtype_id is not None:
+                lib = self.custom_ar._native_lib
+                try:
+                    lib.infccl_all_gather.restype = ctypes.c_int
+                    lib.infccl_all_gather.argtypes = [
+                        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+                        ctypes.c_int64, ctypes.c_int, ctypes.c_void_p]
+                except AttributeError:
+                    pass  # v1 library, fall through to NCCL
+                else:
+                    cuda_stream = stream
+                    if cuda_stream is None:
+                        cuda_stream = torch.cuda.current_stream(self.device).cuda_stream
+                    elif hasattr(cuda_stream, 'cuda_stream'):
+                        cuda_stream = cuda_stream.cuda_stream
+                    
+                    rc = lib.infccl_all_gather(
+                        self.custom_ar._native_comm,
+                        ctypes.c_void_p(output.data_ptr()),
+                        ctypes.c_void_p(input_tensor.data_ptr()),
+                        ctypes.c_int64(input_tensor.numel()),
+                        ctypes.c_int(dtype_id),
+                        ctypes.c_void_p(cuda_stream))
+                    if rc == 0:
+                        return
+        
+        # NCCL fallback
+        if stream is None:
+            cuda_stream = torch.cuda.current_stream(self.device).cuda_stream
+        elif hasattr(stream, 'cuda_stream'):
+            cuda_stream = stream.cuda_stream
+        else:
+            cuda_stream = stream
+        
+        self.nccl.lib.ncclAllGather(
+            ctypes.c_void_p(input_tensor.data_ptr()),
+            ctypes.c_void_p(output.data_ptr()),
+            input_tensor.numel(),
+            NcclDataTypeEnum.from_torch(input_tensor.dtype),
+            self.comm,
+            ctypes.c_void_p(cuda_stream),
+        )
+    
     def send(self, tensor: torch.Tensor, dst: int, stream=None):
         """Point-to-point send via NCCL."""
         if stream is None:
@@ -925,6 +1100,12 @@ class InfcclVllmAdapter:
     
     def all_reduce(self, tensor, op=ReduceOp.SUM, stream=None):
         self.infccl.all_reduce(tensor, op, stream)
+    
+    def reduce_scatter(self, output, input_tensor, op=ReduceOp.SUM, stream=None):
+        self.infccl.reduce_scatter(output, input_tensor, op, stream)
+    
+    def all_gather(self, output, input_tensor, stream=None):
+        self.infccl.all_gather(output, input_tensor, stream)
     
     def send(self, tensor, dst, stream=None):
         self.infccl.send(tensor, dst, stream)
