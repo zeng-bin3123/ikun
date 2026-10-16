@@ -52,6 +52,7 @@ extern "C" {
                                        int64_t count, int dtype,
                                        int rank, int world_size,
                                        uint32_t generation, void* stream);
+    typedef int (*fn_finalize)(InfcclHandles* handles);
     typedef void (*fn_destroy_handles)(InfcclHandles* handles, int rank, int world_size);
 
     // --- infccl_collectives.so ABI (optional, loaded separately) ---
@@ -105,6 +106,7 @@ struct InfcclFunctions {
     fn_get_ipc_handle get_ipc_handle = nullptr;
     fn_register_peer  register_peer = nullptr;
     fn_allreduce_launch allreduce_launch = nullptr;
+    fn_finalize         finalize = nullptr;  // v2 ABI only (.cu)
     fn_destroy_handles  destroy_handles = nullptr;
 
     bool loaded() const { return lib_handle != nullptr && allreduce_launch != nullptr; }
@@ -200,7 +202,13 @@ InfcclFunctions load_infccl(const std::string& path) {
     #undef LOAD_FN
 
     if (f.loaded()) {
-        LOG(INFO) << "[ikun::Runner] Loaded infccl from " << so_path;
+        // Detect which ABI version we got
+        const char* abi = f.finalize ? "v2 (.cu)" : "v1 (.bak)";
+        LOG(INFO) << "[ikun::Runner] Loaded infccl from " << so_path
+                  << " (ABI " << abi << ")";
+    } else {
+        LOG(WARNING) << "[ikun::Runner] infccl .so loaded but missing allreduce symbol";
+        if (f.lib_handle) { dlclose(f.lib_handle); f.lib_handle = nullptr; }
     }
     return f;
 }
@@ -406,8 +414,16 @@ Status CollectiveRunner::finalize(CommHandle& handle) {
     if (!handle.state_) return Status::kErrorInit;
     auto& s = *handle.state_;
 
-    // The allreduce .bak ABI has no explicit finalize call — handles are ready
-    // after all peers are registered. The collectives .so does have one.
+    // v1 ABI (.bak): no explicit finalize — handles ready after peer registration.
+    // v2 ABI (.cu): has infccl_comm_finalize — call it if available.
+    if (s.handles && s.funcs.finalize) {
+        int result = s.funcs.finalize(s.handles);
+        if (result != 0) {
+            LOG(ERROR) << "[ikun::Runner] allreduce finalize failed";
+            return Status::kErrorComm;
+        }
+    }
+    // Collectives .so also has finalize
     if (s.coll_handles && s.coll_funcs.finalize) {
         s.coll_funcs.finalize(s.coll_handles);
     }
