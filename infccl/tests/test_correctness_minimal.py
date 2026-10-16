@@ -64,14 +64,14 @@ def worker(rank, world_size, results):
         bar_h = (ctypes.c_byte * HS)()
         lib.infccl_coll_comm_get_ipc(comm, ctypes.byref(buf_h), ctypes.byref(bar_h))
 
-        my_handles = torch.ByteTensor(list(bytes(buf_h)) + list(bytes(bar_h)))
+        my_handles = torch.ByteTensor(list(bytes(buf_h)) + list(bytes(bar_h))).cuda(rank)
         all_handles = [torch.zeros_like(my_handles) for _ in range(world_size)]
         dist.all_gather(all_handles, my_handles)
 
         for r in range(world_size):
             if r == rank:
                 continue
-            d = all_handles[r].tolist()
+            d = all_handles[r].cpu().tolist()
             pb = (ctypes.c_byte * HS)(*d[:HS])
             mb = (ctypes.c_byte * HS)(*d[HS:2 * HS])
             lib.infccl_coll_register_peer(comm, r, ctypes.byref(pb), ctypes.byref(mb))
