@@ -105,6 +105,76 @@ __device__ __forceinline__ void infccl_barrier_signal_wait(
 }
 
 // ============================================================================
+// Helper kernel: copy data to staging buffer (separate launch for P2P ordering)
+// ============================================================================
+
+template<typename T>
+__global__ void infccl_copy_to_staging(
+    T* __restrict__         staging,
+    const T* __restrict__   input,
+    const int64_t           count)
+{
+    const int64_t tid = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    for (int64_t i = tid; i < count; i += stride)
+        staging[i] = input[i];
+}
+
+// Helper: gather from all staging buffers into output (after P2P sync)
+template<typename T, int WORLD_SIZE>
+__global__ void infccl_gather_from_staging(
+    T* __restrict__         output,
+    void** __restrict__     peer_staging,
+    volatile uint32_t** __restrict__ peer_barriers,
+    const int               rank,
+    const int64_t           send_count,
+    const uint32_t          gen)
+{
+    const int64_t tid = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+
+    // Barrier: wait for all peers to finish copying
+    infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
+
+    // Gather
+    for (int r = 0; r < WORLD_SIZE; r++) {
+        const T* peer_buf = (const T*)peer_staging[r];
+        const int64_t out_offset = (int64_t)r * send_count;
+        for (int64_t i = tid; i < send_count; i += stride)
+            output[out_offset + i] = peer_buf[i];
+    }
+}
+
+// Helper: reduce-scatter from all staging buffers (after P2P sync)
+template<typename T, int WORLD_SIZE>
+__global__ void infccl_scatter_reduce_from_staging(
+    T* __restrict__         output,
+    void** __restrict__     peer_staging,
+    volatile uint32_t** __restrict__ peer_barriers,
+    const int               rank,
+    const int64_t           total_count,
+    const uint32_t          gen)
+{
+    const int64_t tid = (int64_t)blockIdx.x * blockDim.x + threadIdx.x;
+    const int64_t stride = (int64_t)gridDim.x * blockDim.x;
+    const int64_t chunk_size = total_count / WORLD_SIZE;
+
+    // Barrier
+    infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
+
+    // Reduce my slice
+    const int64_t my_offset = (int64_t)rank * chunk_size;
+    for (int64_t i = tid; i < chunk_size; i += stride) {
+        T acc = ((T*)peer_staging[0])[my_offset + i];
+        #pragma unroll
+        for (int r = 1; r < WORLD_SIZE; r++)
+            acc = acc + ((T*)peer_staging[r])[my_offset + i];
+        output[i] = acc;
+    }
+}
+
+
+// ============================================================================
 // AllGather Kernel
 //
 // Layer 1 (Theorem): allgather_chunk_coverage
@@ -517,7 +587,9 @@ static int compute_grid(int64_t count) {
 }
 
 // ---- AllGather ----
-// dtype: 0=fp32, 1=fp16, 2=bf16
+// Uses two-phase launch: (1) copy to staging, (2) barrier + gather
+// This ensures P2P writes are visible across GPUs on PCIe (BI-V100)
+// without __threadfence_system which is unavailable on ivcore10.
 int infccl_allgather(InfcclCollComm* comm,
                      void* output, const void* input,
                      int64_t send_count, int dtype,
@@ -525,7 +597,6 @@ int infccl_allgather(InfcclCollComm* comm,
     const int rank = comm->rank;
     const int ws = comm->world_size;
 
-    // Trivial case: single rank, just copy input to output
     if (ws == 1) {
         int elem_size = (dtype == 0) ? 4 : 2;
         cudaMemcpyAsync(output, input, send_count * elem_size,
@@ -536,26 +607,42 @@ int infccl_allgather(InfcclCollComm* comm,
     const uint32_t gen = comm->generation++;
     int grid = compute_grid(send_count);
 
-    #define LAUNCH_AG(T, WS) \
-        infccl_allgather_kernel<T, WS><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>( \
-            (T*)output, (const T*)input, \
-            comm->d_staging, comm->d_barriers, rank, send_count, gen)
-
+    // Phase 1: Copy input to this rank's staging buffer
+    void* my_staging = comm->staging[rank];
     if (dtype == 0) {
-        if (ws == 2) LAUNCH_AG(float, 2);
-        else if (ws == 4) LAUNCH_AG(float, 4);
-        else LAUNCH_AG(float, 8);
+        infccl_copy_to_staging<float><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>(
+            (float*)my_staging, (const float*)input, send_count);
     } else if (dtype == 1) {
-        if (ws == 2) LAUNCH_AG(half, 2);
-        else if (ws == 4) LAUNCH_AG(half, 4);
-        else LAUNCH_AG(half, 8);
-    } else if (dtype == 2) {
-        if (ws == 2) LAUNCH_AG(uint16_t, 2);
-        else if (ws == 4) LAUNCH_AG(uint16_t, 4);
-        else LAUNCH_AG(uint16_t, 8);
+        infccl_copy_to_staging<half><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>(
+            (half*)my_staging, (const half*)input, send_count);
+    } else {
+        infccl_copy_to_staging<uint16_t><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>(
+            (uint16_t*)my_staging, (const uint16_t*)input, send_count);
     }
 
-    #undef LAUNCH_AG
+    // Synchronize: ensures P2P staging writes are complete before barrier
+    cudaStreamSynchronize(stream);
+
+    // Phase 2: Barrier + gather from all peers
+    #define LAUNCH_GATHER(T, WS) \
+        infccl_gather_from_staging<T, WS><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>( \
+            (T*)output, comm->d_staging, comm->d_barriers, rank, send_count, gen)
+
+    if (dtype == 0) {
+        if (ws == 2) LAUNCH_GATHER(float, 2);
+        else if (ws == 4) LAUNCH_GATHER(float, 4);
+        else LAUNCH_GATHER(float, 8);
+    } else if (dtype == 1) {
+        if (ws == 2) LAUNCH_GATHER(half, 2);
+        else if (ws == 4) LAUNCH_GATHER(half, 4);
+        else LAUNCH_GATHER(half, 8);
+    } else if (dtype == 2) {
+        if (ws == 2) LAUNCH_GATHER(uint16_t, 2);
+        else if (ws == 4) LAUNCH_GATHER(uint16_t, 4);
+        else LAUNCH_GATHER(uint16_t, 8);
+    }
+
+    #undef LAUNCH_GATHER
     return 0;
 }
 
@@ -654,6 +741,7 @@ int infccl_reduce(InfcclCollComm* comm,
 }
 
 // ---- ReduceScatter ----
+// Uses two-phase launch like AllGather for P2P ordering.
 int infccl_reduce_scatter(InfcclCollComm* comm,
                           void* output, const void* input,
                           int64_t total_count, int dtype,
@@ -672,38 +760,43 @@ int infccl_reduce_scatter(InfcclCollComm* comm,
     const int64_t chunk_size = total_count / ws;
     int grid = compute_grid(chunk_size);
 
-    #define LAUNCH_RS_GENERIC(T, WS) \
-        infccl_reduce_scatter_kernel<T, WS><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>( \
-            (T*)output, (const T*)input, \
-            comm->d_staging, comm->d_barriers, rank, total_count, gen)
-
-    #define LAUNCH_RS_FP16(WS) \
-        infccl_reduce_scatter_fp16_kernel<WS><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>( \
-            (half*)output, (const half*)input, \
-            comm->d_staging, comm->d_barriers, rank, total_count, gen)
-
-    #define LAUNCH_RS_BF16(WS) \
-        infccl_reduce_scatter_bf16_kernel<WS><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>( \
-            (uint16_t*)output, (const uint16_t*)input, \
-            comm->d_staging, comm->d_barriers, rank, total_count, gen)
-
+    // Phase 1: Copy full input to staging
+    void* my_staging = comm->staging[rank];
+    int copy_grid = compute_grid(total_count);
     if (dtype == 0) {
-        if (ws == 2) LAUNCH_RS_GENERIC(float, 2);
-        else if (ws == 4) LAUNCH_RS_GENERIC(float, 4);
-        else LAUNCH_RS_GENERIC(float, 8);
+        infccl_copy_to_staging<float><<<copy_grid, INFCCL_BLOCK_SIZE, 0, stream>>>(
+            (float*)my_staging, (const float*)input, total_count);
     } else if (dtype == 1) {
-        if (ws == 2) LAUNCH_RS_FP16(2);
-        else if (ws == 4) LAUNCH_RS_FP16(4);
-        else LAUNCH_RS_FP16(8);
-    } else if (dtype == 2) {
-        if (ws == 2) LAUNCH_RS_BF16(2);
-        else if (ws == 4) LAUNCH_RS_BF16(4);
-        else LAUNCH_RS_BF16(8);
+        infccl_copy_to_staging<half><<<copy_grid, INFCCL_BLOCK_SIZE, 0, stream>>>(
+            (half*)my_staging, (const half*)input, total_count);
+    } else {
+        infccl_copy_to_staging<uint16_t><<<copy_grid, INFCCL_BLOCK_SIZE, 0, stream>>>(
+            (uint16_t*)my_staging, (const uint16_t*)input, total_count);
     }
 
-    #undef LAUNCH_RS_GENERIC
-    #undef LAUNCH_RS_FP16
-    #undef LAUNCH_RS_BF16
+    // Synchronize: ensures P2P staging writes complete
+    cudaStreamSynchronize(stream);
+
+    // Phase 2: Barrier + scatter-reduce
+    #define LAUNCH_SR(T, WS) \
+        infccl_scatter_reduce_from_staging<T, WS><<<grid, INFCCL_BLOCK_SIZE, 0, stream>>>( \
+            (T*)output, comm->d_staging, comm->d_barriers, rank, total_count, gen)
+
+    if (dtype == 0) {
+        if (ws == 2) LAUNCH_SR(float, 2);
+        else if (ws == 4) LAUNCH_SR(float, 4);
+        else LAUNCH_SR(float, 8);
+    } else if (dtype == 1) {
+        if (ws == 2) LAUNCH_SR(half, 2);
+        else if (ws == 4) LAUNCH_SR(half, 4);
+        else LAUNCH_SR(half, 8);
+    } else if (dtype == 2) {
+        if (ws == 2) LAUNCH_SR(uint16_t, 2);
+        else if (ws == 4) LAUNCH_SR(uint16_t, 4);
+        else LAUNCH_SR(uint16_t, 8);
+    }
+
+    #undef LAUNCH_SR
     return 0;
 }
 
