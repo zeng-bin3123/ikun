@@ -26,9 +26,21 @@ def load_lib():
     lib.infccl_coll_comm_destroy.restype = None
     lib.infccl_coll_comm_destroy.argtypes = [ctypes.c_void_p]
     lib.infccl_allgather.restype = ctypes.c_int
+    lib.infccl_allgather.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_int64, ctypes.c_int, ctypes.c_void_p]
     lib.infccl_broadcast.restype = ctypes.c_int
+    lib.infccl_broadcast.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_int64, ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
     lib.infccl_reduce.restype = ctypes.c_int
+    lib.infccl_reduce.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_int64, ctypes.c_int, ctypes.c_int, ctypes.c_void_p]
     lib.infccl_reduce_scatter.restype = ctypes.c_int
+    lib.infccl_reduce_scatter.argtypes = [
+        ctypes.c_void_p, ctypes.c_void_p, ctypes.c_void_p,
+        ctypes.c_int64, ctypes.c_int, ctypes.c_void_p]
     return lib
 
 
