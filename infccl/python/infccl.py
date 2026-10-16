@@ -317,6 +317,13 @@ class InfcclCustomAR:
                     lib.infccl_comm_finalize.restype = ctypes.c_int
                     lib.infccl_comm_destroy.restype = None
                     lib.infccl_comm_destroy.argtypes = [ctypes.c_void_p]
+                    # v2: ring path query
+                    try:
+                        lib.infccl_query_path.restype = ctypes.c_int
+                        lib.infccl_query_path.argtypes = [ctypes.c_int64]
+                        self._has_ring = True
+                    except AttributeError:
+                        self._has_ring = False
                     self._native_lib = lib
                     self._use_native = True
                     logger.info(f"[infccl] Loaded native kernel from {path}")
@@ -433,7 +440,13 @@ class InfcclCustomAR:
             self._pytorch_allreduce(tensor, numel, stream)
     
     def _native_allreduce(self, tensor: torch.Tensor, numel: int, stream=None):
-        """Launch via compiled CUDA kernel — zero per-launch allocs."""
+        """Launch via compiled CUDA kernel — zero per-launch allocs.
+        
+        v2: The kernel now returns 1 if the tensor exceeds the ring threshold
+        (>8MB), signaling the caller to use NCCL instead. Return codes:
+          0 = success (fused or ring path handled it)
+          1 = too large, caller should fall back to NCCL
+        """
         dtype_id = self.DTYPE_MAP.get(tensor.dtype)
         if dtype_id is None:
             raise ValueError(f"Unsupported dtype: {tensor.dtype}")
@@ -452,7 +465,10 @@ class InfcclCustomAR:
             ctypes.c_int64(numel),
             ctypes.c_int(dtype_id),
             ctypes.c_void_p(cuda_stream))
-        if rc != 0:
+        if rc == 1:
+            # Tensor too large for custom AR — signal caller to use NCCL
+            raise ValueError("tensor_too_large")
+        elif rc != 0:
             raise RuntimeError(f"infccl_allreduce failed: {rc}")
     
     def _pytorch_allreduce(self, tensor: torch.Tensor, numel: int, stream=None):
@@ -719,9 +735,13 @@ class InfcclCommunicator:
         """
         Perform allreduce on the given tensor.
         
-        Routing logic:
-          1. If tensor < threshold and custom AR available and op=SUM: use P2P
-          2. Otherwise: use NCCL
+        Routing logic (v2):
+          1. Custom P2P fused allreduce for tiny tensors (≤ 256KB)
+          2. Custom P2P ring allreduce for medium tensors (256KB ~ 8MB)
+          3. System NCCL for large tensors (> 8MB) or non-SUM ops
+          
+        The kernel internally routes between fused and ring, and returns
+        rc=1 when the tensor exceeds the ring threshold, triggering NCCL.
         """
         if self.disabled or not self.available:
             return
@@ -731,7 +751,7 @@ class InfcclCommunicator:
         
         nbytes = tensor.numel() * tensor.element_size()
         
-        # Route to custom allreduce for small tensors
+        # Route to custom allreduce (fused or ring) for SUM on contiguous tensors
         if (self.custom_ar is not None 
             and nbytes <= CUSTOM_AR_THRESHOLD_BYTES
             and op == ReduceOp.SUM
@@ -740,6 +760,11 @@ class InfcclCommunicator:
                 self.custom_ar.all_reduce_inplace(tensor, stream)
                 self._custom_ar_calls += 1
                 return
+            except ValueError as e:
+                if "tensor_too_large" in str(e):
+                    pass  # fall through to NCCL
+                else:
+                    logger.warning(f"[infccl] Custom AR failed, falling back to NCCL: {e}")
             except Exception as e:
                 logger.warning(f"[infccl] Custom AR failed, falling back to NCCL: {e}")
         

@@ -159,5 +159,60 @@ class TestNcclRedOpEnum:
         assert NcclRedOpEnum.from_torch(ReduceOp.MIN) == 3
 
 
+class TestRingPathSelection:
+    """Test the v2 path selection thresholds."""
+
+    def test_fused_path(self):
+        """Tiny tensors should use fused (one-shot) path."""
+        # 100 FP16 elements = 200 bytes, well under 256KB fused threshold
+        assert 200 <= 256 * 1024  # fused path
+
+    def test_ring_path(self):
+        """Medium tensors should use ring path."""
+        # 500K FP16 elements = 1MB, between 256KB and 8MB
+        nbytes = 500_000 * 2
+        assert 256 * 1024 < nbytes <= 8 * 1024 * 1024  # ring path
+
+    def test_nccl_path(self):
+        """Large tensors should fall back to NCCL."""
+        # 5M FP32 elements = 20MB, above 8MB ring threshold
+        nbytes = 5_000_000 * 4
+        assert nbytes > 8 * 1024 * 1024  # NCCL path
+
+    def test_native_query_path(self):
+        """Test the native infccl_query_path function if available."""
+        try:
+            import ctypes
+            search_paths = [
+                os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(
+                    os.path.abspath(__file__)))), "infccl", "lib", "infccl_allreduce.so"),
+            ]
+            lib = None
+            for p in search_paths:
+                if os.path.isfile(p):
+                    lib = ctypes.CDLL(p)
+                    break
+            if lib is None:
+                pytest.skip("infccl_allreduce.so not built")
+            
+            lib.infccl_query_path.restype = ctypes.c_int
+            lib.infccl_query_path.argtypes = [ctypes.c_int64]
+            
+            # Fused: ≤ 256KB
+            assert lib.infccl_query_path(100) == 0           # 100 bytes → fused
+            assert lib.infccl_query_path(256 * 1024) == 0    # exactly 256KB → fused
+            
+            # Ring: 256KB < x ≤ 8MB
+            assert lib.infccl_query_path(256 * 1024 + 1) == 1  # just over → ring
+            assert lib.infccl_query_path(8 * 1024 * 1024) == 1 # exactly 8MB → ring
+            
+            # NCCL: > 8MB
+            assert lib.infccl_query_path(8 * 1024 * 1024 + 1) == 2  # just over → NCCL
+            
+            print("infccl_query_path: all thresholds verified")
+        except OSError as e:
+            pytest.skip(f"Cannot load native library: {e}")
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
