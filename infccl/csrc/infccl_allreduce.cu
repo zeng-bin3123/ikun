@@ -857,6 +857,136 @@ int infccl_query_path(int64_t nbytes) {
     return 2;
 }
 
+// ============================================================================
+// ReduceScatter: each rank gets 1/P of the reduced data
+//   input: count elements on each rank (all same data to reduce)
+//   output: count/P elements on each rank (this rank's shard of the result)
+//
+// This is the first half of ring allreduce. Used in TP column-parallel Linear:
+//   output = Linear(input)  [each rank computes partial]
+//   reduced_shard = reduce_scatter(output)  [sum partials, scatter result]
+//
+// dtype: 0=fp32, 1=fp16, 2=bf16
+// Returns: 0 success, 1 too large for custom path
+// ============================================================================
+int infccl_reduce_scatter(InfcclComm* comm,
+                          void* output, const void* input,
+                          int64_t input_count, int dtype,
+                          cudaStream_t stream) {
+    const int rank = comm->rank;
+    const int ws = comm->world_size;
+    const int elem_size = (dtype == 0) ? 4 : 2;
+    const int64_t nbytes = input_count * elem_size;
+    const int64_t shard_count = (input_count + ws - 1) / ws;
+    const int ring_pos = comm->ring_order[rank];
+
+    if (nbytes > INFCCL_RING_MAX_BYTES) return 1;
+
+    const uint32_t gen_base = comm->generation;
+    comm->generation += (uint32_t)(ws + 1);
+
+    // We reuse the ring allreduce infrastructure but only run the
+    // reduce-scatter phase, then copy this rank's completed shard to output.
+    // For simplicity we launch the full ring allreduce kernel and then
+    // just extract this rank's shard. This wastes the allgather bandwidth
+    // but keeps the code simple for the first version.
+    // TODO: implement a reduce-scatter-only kernel for better efficiency.
+
+    // For now, run infccl_allreduce in-place on the staging buffer
+    // then extract the shard. But since the ring kernel is single-block,
+    // we can't easily re-enter it. Instead, use the fused path for small
+    // and the full ring for medium, then copy the shard out.
+
+    // Simple approach: allreduce the full input, then extract shard
+    int rc = infccl_allreduce(comm, (void*)input, input, input_count, dtype, stream);
+    if (rc != 0) return rc;
+
+    // Copy this rank's shard from the allreduced result to output
+    // The shard index for this rank in the ring is ring_pos
+    int64_t shard_start = (int64_t)ring_pos * shard_count;
+    int64_t shard_end = shard_start + shard_count;
+    if (shard_end > input_count) shard_end = input_count;
+    int64_t shard_len = shard_end - shard_start;
+
+    if (shard_len > 0) {
+        const char* src = (const char*)input + shard_start * elem_size;
+        cudaMemcpyAsync(output, src, shard_len * elem_size,
+                        cudaMemcpyDeviceToDevice, stream);
+    }
+
+    return 0;
+}
+
+// ============================================================================
+// AllGather: each rank contributes count/P elements, output has count elements
+//   input: count/P elements on each rank (this rank's shard)
+//   output: count elements on each rank (all shards concatenated)
+//
+// This is the second half of ring allreduce. Used in TP row-parallel Linear:
+//   shard = Linear(input_shard)  [each rank computes its shard]
+//   full_output = all_gather(shard)  [gather all shards]
+//
+// dtype: 0=fp32, 1=fp16, 2=bf16
+// Returns: 0 success, 1 too large for custom path
+// ============================================================================
+int infccl_all_gather(InfcclComm* comm,
+                      void* output, const void* input,
+                      int64_t shard_count, int dtype,
+                      cudaStream_t stream) {
+    const int rank = comm->rank;
+    const int ws = comm->world_size;
+    const int elem_size = (dtype == 0) ? 4 : 2;
+    const int64_t total_count = shard_count * ws;
+    const int64_t nbytes = total_count * elem_size;
+    const int ring_pos = comm->ring_order[rank];
+
+    if (nbytes > INFCCL_RING_MAX_BYTES) return 1;
+
+    const uint32_t gen_base = comm->generation;
+    comm->generation += (uint32_t)(ws + 1);
+
+    // Step 1: Each rank copies its shard into the correct position
+    // in its staging buffer
+    int64_t my_offset = (int64_t)ring_pos * shard_count;
+    char* staging = (char*)comm->staging[rank];
+    cudaMemcpyAsync(staging + my_offset * elem_size, input,
+                    shard_count * elem_size,
+                    cudaMemcpyDeviceToDevice, stream);
+
+    // Step 2: Barrier — all ranks have placed their shard
+    cudaStreamSynchronize(stream);
+    // Use a simple flag-based barrier (host-side for now)
+    // TODO: GPU-side barrier for lower latency
+    uint32_t gen = gen_base;
+    volatile uint32_t* my_barrier = comm->barriers[rank];
+    // Signal all peers
+    for (int r = 0; r < ws; r++) {
+        if (r != rank) {
+            volatile uint32_t* peer_flags = comm->barriers[r];
+            peer_flags[rank] = gen;
+        }
+    }
+    // Wait for all peers
+    for (int r = 0; r < ws; r++) {
+        if (r != rank) {
+            while (my_barrier[r] < gen);
+        }
+    }
+
+    // Step 3: Each rank copies all shards from all peers' staging to output
+    for (int r = 0; r < ws; r++) {
+        int r_ring_pos = comm->ring_order[r];
+        int64_t offset = (int64_t)r_ring_pos * shard_count;
+        const char* peer_staging = (const char*)comm->staging[r];
+        cudaMemcpyAsync((char*)output + offset * elem_size,
+                        peer_staging + offset * elem_size,
+                        shard_count * elem_size,
+                        cudaMemcpyDeviceToDevice, stream);
+    }
+
+    return 0;
+}
+
 void infccl_comm_destroy(InfcclComm* comm) {
     if (!comm) return;
     cudaSetDevice(comm->rank);

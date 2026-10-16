@@ -177,6 +177,29 @@ class NcclLibrary:
             cudaStream_t,     # stream
         ]
         
+        # ncclReduceScatter
+        lib.ncclReduceScatter.restype = ncclResult_t
+        lib.ncclReduceScatter.argtypes = [
+            buffer_type,      # sendbuff
+            buffer_type,      # recvbuff
+            ctypes.c_size_t,  # recvcount (per rank)
+            ncclDataType_t,   # datatype
+            ncclRedOp_t,      # op
+            ncclComm_t,       # comm
+            cudaStream_t,     # stream
+        ]
+        
+        # ncclAllGather
+        lib.ncclAllGather.restype = ncclResult_t
+        lib.ncclAllGather.argtypes = [
+            buffer_type,      # sendbuff
+            buffer_type,      # recvbuff
+            ctypes.c_size_t,  # sendcount (per rank)
+            ncclDataType_t,   # datatype
+            ncclComm_t,       # comm
+            cudaStream_t,     # stream
+        ]
+        
         # ncclCommDestroy
         lib.ncclCommDestroy.restype = ncclResult_t
         lib.ncclCommDestroy.argtypes = [ncclComm_t]
@@ -791,6 +814,12 @@ class InfcclVllmAdapter:
     
     def all_reduce(self, tensor, op=ReduceOp.SUM, stream=None):
         self.infccl.all_reduce(tensor, op, stream)
+    
+    def reduce_scatter(self, output, input_tensor, op=ReduceOp.SUM, stream=None):
+        self.infccl.reduce_scatter(output, input_tensor, op, stream)
+    
+    def all_gather(self, output, input_tensor, stream=None):
+        self.infccl.all_gather(output, input_tensor, stream)
     
     def send(self, tensor, dst, stream=None):
         self.infccl.send(tensor, dst, stream)
