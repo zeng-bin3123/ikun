@@ -557,6 +557,14 @@ int infccl_broadcast(InfcclCollComm* comm,
                      cudaStream_t stream) {
     const int rank = comm->rank;
     const int ws = comm->world_size;
+
+    if (ws == 1) {
+        int elem_size = (dtype == 0) ? 4 : 2;
+        cudaMemcpyAsync(output, input, count * elem_size,
+                        cudaMemcpyDeviceToDevice, stream);
+        return 0;
+    }
+
     const uint32_t gen = comm->generation++;
     int grid = compute_grid(count);
 
@@ -590,6 +598,14 @@ int infccl_reduce(InfcclCollComm* comm,
                   cudaStream_t stream) {
     const int rank = comm->rank;
     const int ws = comm->world_size;
+
+    if (ws == 1) {
+        int elem_size = (dtype == 0) ? 4 : 2;
+        cudaMemcpyAsync(output, input, count * elem_size,
+                        cudaMemcpyDeviceToDevice, stream);
+        return 0;
+    }
+
     const uint32_t gen = comm->generation++;
     int grid = compute_grid(count);
 
@@ -635,6 +651,14 @@ int infccl_reduce_scatter(InfcclCollComm* comm,
                           cudaStream_t stream) {
     const int rank = comm->rank;
     const int ws = comm->world_size;
+
+    if (ws == 1) {
+        int elem_size = (dtype == 0) ? 4 : 2;
+        cudaMemcpyAsync(output, input, total_count * elem_size,
+                        cudaMemcpyDeviceToDevice, stream);
+        return 0;
+    }
+
     const uint32_t gen = comm->generation++;
     const int64_t chunk_size = total_count / ws;
     int grid = compute_grid(chunk_size);
