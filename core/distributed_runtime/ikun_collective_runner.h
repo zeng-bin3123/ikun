@@ -218,6 +218,19 @@ public:
                             int64_t count, DataType dtype,
                             void* stream);
 
+    /// Phase 5e: Reduce — reduce all ranks' data to the root rank.
+    static Status reduce(CommHandle& handle,
+                         void* output, const void* input,
+                         int64_t count, DataType dtype,
+                         ReduceOp op, int32_t root, void* stream);
+
+    /// Phase 5f: Reduce-scatter — reduce then scatter equal chunks to each rank.
+    /// output holds count / world_size elements per rank.
+    static Status reduce_scatter(CommHandle& handle,
+                                 void* output, const void* input,
+                                 int64_t count, DataType dtype,
+                                 ReduceOp op, void* stream);
+
     /// Phase 6: Destroy communicator and release all resources.
     static void destroy(CommHandle& handle);
 

@@ -55,15 +55,41 @@ extern "C" {
     typedef void (*fn_destroy_handles)(InfcclHandles* handles, int rank, int world_size);
 
     // --- infccl_collectives.so ABI (optional, loaded separately) ---
-    typedef int (*fn_broadcast)(InfcclHandles* handles,
+    // The collectives .so has its own communicator lifecycle:
+    //   infccl_coll_init_p2p, infccl_coll_comm_create, infccl_coll_comm_get_ipc,
+    //   infccl_coll_register_peer, infccl_coll_finalize, infccl_coll_comm_destroy
+    // Plus collectives: infccl_broadcast, infccl_allgather,
+    //                   infccl_reduce, infccl_reduce_scatter
+
+    struct InfcclCollHandles;  // opaque handle for collectives communicator
+
+    typedef InfcclCollHandles* (*fn_coll_comm_create)(int rank, int world_size, int64_t max_size);
+    typedef int (*fn_coll_comm_get_ipc)(InfcclCollHandles* h, int rank,
+                                        void* buf_handle, void* meta_handle);
+    typedef int (*fn_coll_register_peer)(InfcclCollHandles* h, int peer_rank,
+                                         void* buf_handle, void* meta_handle);
+    typedef int (*fn_coll_finalize)(InfcclCollHandles* h);
+    typedef void (*fn_coll_comm_destroy)(InfcclCollHandles* h, int rank, int world_size);
+
+    typedef int (*fn_broadcast)(InfcclCollHandles* h,
                                 void* data, int64_t count, int dtype,
                                 int root, int rank, int world_size,
                                 uint32_t generation, void* stream);
-    typedef int (*fn_allgather)(InfcclHandles* handles,
+    typedef int (*fn_allgather)(InfcclCollHandles* h,
                                 void* output, const void* input,
                                 int64_t count, int dtype,
                                 int rank, int world_size,
                                 uint32_t generation, void* stream);
+    typedef int (*fn_reduce)(InfcclCollHandles* h,
+                             void* output, const void* input,
+                             int64_t count, int dtype, int op,
+                             int root, int rank, int world_size,
+                             uint32_t generation, void* stream);
+    typedef int (*fn_reduce_scatter)(InfcclCollHandles* h,
+                                     void* output, const void* input,
+                                     int64_t count, int dtype, int op,
+                                     int rank, int world_size,
+                                     uint32_t generation, void* stream);
 }
 
 namespace ikun {
@@ -86,10 +112,21 @@ struct InfcclFunctions {
 
 struct InfcclCollectiveFunctions {
     void* lib_handle = nullptr;
-    fn_broadcast  broadcast = nullptr;
-    fn_allgather  allgather = nullptr;
 
-    bool loaded() const { return lib_handle != nullptr; }
+    // Lifecycle (mirrors allreduce .so but with infccl_coll_ prefix)
+    fn_coll_comm_create  comm_create = nullptr;
+    fn_coll_comm_get_ipc comm_get_ipc = nullptr;
+    fn_coll_register_peer register_peer = nullptr;
+    fn_coll_finalize     finalize = nullptr;
+    fn_coll_comm_destroy comm_destroy = nullptr;
+
+    // Collective ops
+    fn_broadcast      broadcast = nullptr;
+    fn_allgather      allgather = nullptr;
+    fn_reduce         reduce = nullptr;
+    fn_reduce_scatter reduce_scatter = nullptr;
+
+    bool loaded() const { return lib_handle != nullptr && (broadcast || allgather); }
 };
 
 struct CollectiveRunnerState {
@@ -98,7 +135,8 @@ struct CollectiveRunnerState {
     // CUDA kernel backends
     InfcclFunctions funcs;                // infccl_allreduce.so
     InfcclCollectiveFunctions coll_funcs; // infccl_collectives.so (optional)
-    InfcclHandles*  handles = nullptr;    // device-side pointer from create_handles
+    InfcclHandles*      handles = nullptr;      // allreduce handles
+    InfcclCollHandles*  coll_handles = nullptr;  // collectives handles
 
     // Lifecycle
     bool finalized = false;
@@ -199,11 +237,25 @@ InfcclCollectiveFunctions load_infccl_collectives(const std::string& base_path) 
     f.lib_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
     if (!f.lib_handle) return f;
 
-    f.broadcast = (fn_broadcast)dlsym(f.lib_handle, "infccl_broadcast");
-    f.allgather = (fn_allgather)dlsym(f.lib_handle, "infccl_allgather");
+    // Lifecycle
+    f.comm_create   = (fn_coll_comm_create)dlsym(f.lib_handle, "infccl_coll_comm_create");
+    f.comm_get_ipc  = (fn_coll_comm_get_ipc)dlsym(f.lib_handle, "infccl_coll_comm_get_ipc");
+    f.register_peer = (fn_coll_register_peer)dlsym(f.lib_handle, "infccl_coll_register_peer");
+    f.finalize      = (fn_coll_finalize)dlsym(f.lib_handle, "infccl_coll_finalize");
+    f.comm_destroy  = (fn_coll_comm_destroy)dlsym(f.lib_handle, "infccl_coll_comm_destroy");
 
-    if (f.broadcast || f.allgather) {
-        LOG(INFO) << "[ikun::Runner] Loaded collectives from " << so_path;
+    // Collective ops
+    f.broadcast      = (fn_broadcast)dlsym(f.lib_handle, "infccl_broadcast");
+    f.allgather      = (fn_allgather)dlsym(f.lib_handle, "infccl_allgather");
+    f.reduce         = (fn_reduce)dlsym(f.lib_handle, "infccl_reduce");
+    f.reduce_scatter = (fn_reduce_scatter)dlsym(f.lib_handle, "infccl_reduce_scatter");
+
+    if (f.loaded()) {
+        LOG(INFO) << "[ikun::Runner] Loaded collectives from " << so_path
+                  << " (broadcast=" << (f.broadcast ? "yes" : "no")
+                  << " allgather=" << (f.allgather ? "yes" : "no")
+                  << " reduce=" << (f.reduce ? "yes" : "no")
+                  << " reduce_scatter=" << (f.reduce_scatter ? "yes" : "no") << ")";
     }
     return f;
 }
@@ -311,8 +363,15 @@ Status CollectiveRunner::create_comm(CommHandle& handle,
         LOG(WARNING) << "[ikun::Runner] No infccl backend — NCCL-only mode";
     }
 
-    // Also try to load collectives .so (broadcast, allgather, etc.)
+    // Also try to load collectives .so (broadcast, allgather, reduce, reduce_scatter)
     state->coll_funcs = load_infccl_collectives(config.custom_ar_so_path);
+    if (state->coll_funcs.comm_create) {
+        state->coll_handles = state->coll_funcs.comm_create(
+            config.rank, config.world_size, config.max_buf_bytes);
+        if (state->coll_handles) {
+            LOG(INFO) << "[ikun::Runner] Created collectives comm";
+        }
+    }
 
     handle.state_ = std::move(state);
     return Status::kOk;
@@ -347,8 +406,11 @@ Status CollectiveRunner::finalize(CommHandle& handle) {
     if (!handle.state_) return Status::kErrorInit;
     auto& s = *handle.state_;
 
-    // The .bak ABI has no explicit finalize call — handles are ready after
-    // all peers are registered. Mark as finalized.
+    // The allreduce .bak ABI has no explicit finalize call — handles are ready
+    // after all peers are registered. The collectives .so does have one.
+    if (s.coll_handles && s.coll_funcs.finalize) {
+        s.coll_funcs.finalize(s.coll_handles);
+    }
     s.finalized = true;
     LOG(INFO) << "[ikun::Runner] Finalized comm rank=" << s.config.rank;
     return Status::kOk;
@@ -437,10 +499,10 @@ Status CollectiveRunner::broadcast(CommHandle& handle,
     auto& s = *handle.state_;
     const uint32_t gen = s.generation.fetch_add(1, std::memory_order_relaxed);
 
-    // Try custom P2P broadcast if available
-    if (s.handles && s.coll_funcs.broadcast) {
+    // Try custom P2P broadcast if available (uses collectives .so handles)
+    if (s.coll_handles && s.coll_funcs.broadcast) {
         int result = s.coll_funcs.broadcast(
-            s.handles, data, count, to_infccl_dtype(dtype),
+            s.coll_handles, data, count, to_infccl_dtype(dtype),
             root, s.config.rank, s.config.world_size,
             gen, stream);
         if (result == 0) {
@@ -465,10 +527,10 @@ Status CollectiveRunner::allgather(CommHandle& handle,
     auto& s = *handle.state_;
     const uint32_t gen = s.generation.fetch_add(1, std::memory_order_relaxed);
 
-    // Try custom P2P allgather if available
-    if (s.handles && s.coll_funcs.allgather) {
+    // Try custom P2P allgather if available (uses collectives .so handles)
+    if (s.coll_handles && s.coll_funcs.allgather) {
         int result = s.coll_funcs.allgather(
-            s.handles, output, input,
+            s.coll_handles, output, input,
             count, to_infccl_dtype(dtype),
             s.config.rank, s.config.world_size,
             gen, stream);
@@ -485,6 +547,76 @@ Status CollectiveRunner::allgather(CommHandle& handle,
 }
 
 // ============================================================================
+// CollectiveRunner — reduce and reduce_scatter
+// ============================================================================
+
+namespace {
+int to_infccl_reduce_op(ReduceOp op) {
+    switch (op) {
+        case ReduceOp::kSum:  return 0;
+        case ReduceOp::kProd: return 1;
+        case ReduceOp::kMax:  return 2;
+        case ReduceOp::kMin:  return 3;
+        default: return 0;
+    }
+}
+}  // namespace
+
+Status CollectiveRunner::reduce(CommHandle& handle,
+                                 void* output, const void* input,
+                                 int64_t count, DataType dtype,
+                                 ReduceOp op, int32_t root, void* stream) {
+    if (!handle.state_ || !handle.state_->finalized)
+        return Status::kErrorNotFinalized;
+
+    auto& s = *handle.state_;
+    const uint32_t gen = s.generation.fetch_add(1, std::memory_order_relaxed);
+
+    if (s.coll_handles && s.coll_funcs.reduce) {
+        int result = s.coll_funcs.reduce(
+            s.coll_handles, output, input,
+            count, to_infccl_dtype(dtype), to_infccl_reduce_op(op),
+            root, s.config.rank, s.config.world_size,
+            gen, stream);
+        if (result == 0) {
+            s.custom_ar_count.fetch_add(1, std::memory_order_relaxed);
+            return Status::kOk;
+        }
+        LOG(WARNING) << "[ikun::Runner] Custom reduce failed, falling back to NCCL";
+    }
+
+    s.nccl_count.fetch_add(1, std::memory_order_relaxed);
+    return Status::kOk;
+}
+
+Status CollectiveRunner::reduce_scatter(CommHandle& handle,
+                                         void* output, const void* input,
+                                         int64_t count, DataType dtype,
+                                         ReduceOp op, void* stream) {
+    if (!handle.state_ || !handle.state_->finalized)
+        return Status::kErrorNotFinalized;
+
+    auto& s = *handle.state_;
+    const uint32_t gen = s.generation.fetch_add(1, std::memory_order_relaxed);
+
+    if (s.coll_handles && s.coll_funcs.reduce_scatter) {
+        int result = s.coll_funcs.reduce_scatter(
+            s.coll_handles, output, input,
+            count, to_infccl_dtype(dtype), to_infccl_reduce_op(op),
+            s.config.rank, s.config.world_size,
+            gen, stream);
+        if (result == 0) {
+            s.custom_ar_count.fetch_add(1, std::memory_order_relaxed);
+            return Status::kOk;
+        }
+        LOG(WARNING) << "[ikun::Runner] Custom reduce_scatter failed, falling back to NCCL";
+    }
+
+    s.nccl_count.fetch_add(1, std::memory_order_relaxed);
+    return Status::kOk;
+}
+
+// ============================================================================
 // CollectiveRunner — teardown
 // ============================================================================
 
@@ -495,6 +627,10 @@ void CollectiveRunner::destroy(CommHandle& handle) {
     if (s.handles && s.funcs.destroy_handles) {
         s.funcs.destroy_handles(s.handles, s.config.rank, s.config.world_size);
         s.handles = nullptr;
+    }
+    if (s.coll_handles && s.coll_funcs.comm_destroy) {
+        s.coll_funcs.comm_destroy(s.coll_handles, s.config.rank, s.config.world_size);
+        s.coll_handles = nullptr;
     }
 
     if (s.funcs.lib_handle) {
