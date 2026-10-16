@@ -83,7 +83,7 @@ __global__ void infccl_scatter_reduce_kernel(
     for (int64_t i = tid; i < count; i += stride) {
         my_staging[i] = input[i];
     }
-    __threadfence_system();  // ensure P2P writes are visible
+    __threadfence();  // ensure P2P writes are visible  // device-level fence (ivcore10 compat)
     
     // Step 2: Signal that our data is ready
     if (tid == 0) {
@@ -145,7 +145,7 @@ __global__ void infccl_scatter_reduce_fp16_vec(
     if (count % 2 != 0 && tid == 0) {
         peer_buffers[rank][count - 1] = input[count - 1];
     }
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
     
     if (tid == 0) {
         for (int r = 0; r < world_size; r++) {
@@ -200,7 +200,7 @@ __global__ void infccl_oneshot_allreduce(
     for (int64_t i = tid; i < count; i += stride) {
         my_buf[i] = input[i];
     }
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
     
     // Signal and wait (single thread)
     if (tid == 0) {

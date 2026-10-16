@@ -75,6 +75,11 @@ __device__ __forceinline__ uint16_t float_to_bf16(float f) {
 // Layer 1 (Theorem): signal_wait_monotone
 //   ∀ gen g, ∀ r ∈ [0, world_size), barrier[rank][r] is monotonically
 //   non-decreasing. Wait terminates when barrier[rank][r] >= g.
+//
+// Note: Uses __threadfence() (device-level) instead of __threadfence_system()
+// which is not supported by the Iluvatar CoreX clang LLVM backend (ivcore10).
+// On PCIe-attached BI-V100 GPUs, volatile + __threadfence() + PCIe ordering
+// provides the required visibility guarantees for P2P mapped memory.
 // ============================================================================
 
 __device__ __forceinline__ void infccl_barrier_signal_wait(
@@ -87,11 +92,12 @@ __device__ __forceinline__ void infccl_barrier_signal_wait(
             if (r != rank)
                 barriers[r][rank] = gen;
         }
+        __threadfence();  // ensure writes visible before spinning
         // Wait: spin until all peers have signaled gen
         for (int r = 0; r < world_size; r++) {
             if (r != rank) {
                 while (barriers[rank][r] < gen)
-                    ;
+                    ;  // volatile ensures re-read
             }
         }
     }
@@ -130,7 +136,7 @@ __global__ void infccl_allgather_kernel(
     for (int64_t i = tid; i < send_count; i += stride)
         my_buf[i] = input[i];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
 
     // Phase 2: Barrier
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
@@ -178,7 +184,7 @@ __global__ void infccl_broadcast_kernel(
             my_buf[i] = input[i];
     }
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
 
     // Phase 2: Barrier (all ranks synchronize)
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
@@ -221,7 +227,7 @@ __global__ void infccl_reduce_kernel(
     for (int64_t i = tid; i < count; i += stride)
         my_buf[i] = input[i];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
 
     // Phase 2: Barrier
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
@@ -260,7 +266,7 @@ __global__ void infccl_reduce_fp16_kernel(
     if ((count & 1) && tid == 0)
         my_buf[count - 1] = input[count - 1];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
 
     if (rank == root) {
@@ -296,7 +302,7 @@ __global__ void infccl_reduce_bf16_kernel(
     if ((count & 1) && tid == 0)
         my_buf[count - 1] = input[count - 1];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
 
     if (rank == root) {
@@ -341,7 +347,7 @@ __global__ void infccl_reduce_scatter_kernel(
     for (int64_t i = tid; i < total_count; i += stride)
         my_buf[i] = input[i];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
 
     // Phase 2: Barrier
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
@@ -379,7 +385,7 @@ __global__ void infccl_reduce_scatter_fp16_kernel(
     if ((total_count & 1) && tid == 0)
         my_buf[total_count - 1] = input[total_count - 1];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
 
     const int64_t my_offset = (int64_t)rank * chunk_size;
@@ -414,7 +420,7 @@ __global__ void infccl_reduce_scatter_bf16_kernel(
     if ((total_count & 1) && tid == 0)
         my_buf[total_count - 1] = input[total_count - 1];
 
-    __threadfence_system();
+    __threadfence();  // device-level fence (ivcore10 compat)
     infccl_barrier_signal_wait(peer_barriers, rank, WORLD_SIZE, gen);
 
     const int64_t my_offset = (int64_t)rank * chunk_size;
