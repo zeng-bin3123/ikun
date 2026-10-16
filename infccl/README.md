@@ -2,33 +2,45 @@
 
 Optimized collective communication for **Iluvatar BI-V100** (4× PCIe, CUDA 10.2).
 
-## Architecture
+## Architecture (v2)
 
 ```
-┌─────────────────────────────────────────────────────┐
-│                  InfcclCommunicator                   │
-│                                                       │
-│  ┌──────────────┐  ┌──────────────┐  ┌────────────┐ │
-│  │ Custom P2P AR │  │  NCCL Path   │  │ Coalescer  │ │
-│  │ (< 8 MB)     │  │ (≥ 8 MB)     │  │ (batched)  │ │
-│  └──────┬───────┘  └──────┬───────┘  └─────┬──────┘ │
-│         │                  │                 │        │
-│  ┌──────▼───────┐  ┌──────▼───────┐  ┌─────▼──────┐ │
-│  │ CUDA IPC P2P │  │ libnccl.so.2 │  │ Pack/AR/   │ │
-│  │ shared-mem   │  │ (system)     │  │ Unpack     │ │
-│  └──────────────┘  └──────────────┘  └────────────┘ │
-└─────────────────────────────────────────────────────┘
-                         │
-              ┌──────────▼──────────┐
-              │  4× BI-V100 (PCIe)  │
-              │  GPU0 ↔ GPU1 ↔ ... │
-              └─────────────────────┘
+┌──────────────────────────────────────────────────────────┐
+│                   InfcclCommunicator                      │
+│                                                           │
+│  ┌────────────────┐  ┌──────────────┐  ┌──────────────┐ │
+│  │ Fused One-Shot  │  │  Ring AR     │  │  NCCL Path   │ │
+│  │ (≤ 256 KB)     │  │ (256KB~8MB)  │  │ (> 8 MB)     │ │
+│  │ all-to-all copy │  │ reduce-scat  │  │ libnccl.so.2 │ │
+│  │ → barrier       │  │ + allgather  │  │              │ │
+│  │ → local reduce  │  │ P-1 ring     │  │              │ │
+│  └──────┬─────────┘  └──────┬───────┘  └──────┬───────┘ │
+│         │                    │                  │         │
+│  ┌──────▼────────────────────▼──────┐  ┌───────▼───────┐ │
+│  │    CUDA IPC P2P shared memory    │  │  System NCCL  │ │
+│  │    (pre-resolved, zero-alloc)    │  │               │ │
+│  └──────────────────────────────────┘  └───────────────┘ │
+│                                                           │
+│  ┌───────────────────┐  ┌────────────────────┐           │
+│  │ AllReduceCoalescer │  │ Topology-Aware Ring │           │
+│  │ (batch N→1 call)  │  │ (P2P-pair ordering) │           │
+│  └───────────────────┘  └────────────────────┘           │
+└──────────────────────────────────────────────────────────┘
 ```
 
 ## Key Optimizations
 
-### 1. Two-Phase P2P AllReduce (from Mooncake §2)
-For tensors < 8 MB, bypasses NCCL's ring/tree protocol:
+### 1. Three-Path Routing (v2)
+Tensor size determines the optimal AllReduce strategy:
+- **Fused One-Shot (≤ 256KB)**: All-to-all copy → barrier → local reduce
+  Single kernel, zero-alloc, template-unrolled for P=2,4,8
+- **Ring AllReduce (256KB ~ 8MB)**: Reduce-scatter + allgather in P-1 steps
+  Bandwidth-optimal: total wire traffic = 2*(P-1)/P × size
+  Topology-aware ring ordering avoids non-P2P GPU pairs
+- **NCCL Fallback (> 8MB)**: System libnccl.so.2 for large tensors
+
+### 2. Two-Phase P2P AllReduce (from Mooncake §2)
+For tensors < 256KB, bypasses NCCL's ring/tree protocol:
 - Phase 1: Each GPU copies data to P2P-visible staging buffer
 - Phase 2: Each GPU reduces all staging buffers locally
 - **Benefit**: Eliminates NCCL launch overhead (~50μs per call)

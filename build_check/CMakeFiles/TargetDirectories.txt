@@ -1,0 +1,3 @@
+/home/claude/ikun/build_check/CMakeFiles/layerwise_split_kv.dir
+/home/claude/ikun/build_check/CMakeFiles/edit_cache.dir
+/home/claude/ikun/build_check/CMakeFiles/rebuild_cache.dir

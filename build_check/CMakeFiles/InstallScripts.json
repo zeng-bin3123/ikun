@@ -1,0 +1,7 @@
+{
+	"InstallScripts" : 
+	[
+		"/home/claude/ikun/build_check/cmake_install.cmake"
+	],
+	"Parallel" : false
+}
