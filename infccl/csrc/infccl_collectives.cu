@@ -524,6 +524,15 @@ int infccl_allgather(InfcclCollComm* comm,
                      cudaStream_t stream) {
     const int rank = comm->rank;
     const int ws = comm->world_size;
+
+    // Trivial case: single rank, just copy input to output
+    if (ws == 1) {
+        int elem_size = (dtype == 0) ? 4 : 2;
+        cudaMemcpyAsync(output, input, send_count * elem_size,
+                        cudaMemcpyDeviceToDevice, stream);
+        return 0;
+    }
+
     const uint32_t gen = comm->generation++;
     int grid = compute_grid(send_count);
 
