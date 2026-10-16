@@ -40,6 +40,7 @@ extern "C" {
     // Opaque handle type from the .so (InfcclHandles in device memory)
     struct InfcclHandles;
 
+    // --- infccl_allreduce.so ABI ---
     typedef int (*fn_init_p2p)(int num_gpus);
     typedef InfcclHandles* (*fn_create_handles)(int rank, int world_size, int64_t max_size);
     typedef int (*fn_get_ipc_handle)(InfcclHandles* handles, int rank,
@@ -52,6 +53,17 @@ extern "C" {
                                        int rank, int world_size,
                                        uint32_t generation, void* stream);
     typedef void (*fn_destroy_handles)(InfcclHandles* handles, int rank, int world_size);
+
+    // --- infccl_collectives.so ABI (optional, loaded separately) ---
+    typedef int (*fn_broadcast)(InfcclHandles* handles,
+                                void* data, int64_t count, int dtype,
+                                int root, int rank, int world_size,
+                                uint32_t generation, void* stream);
+    typedef int (*fn_allgather)(InfcclHandles* handles,
+                                void* output, const void* input,
+                                int64_t count, int dtype,
+                                int rank, int world_size,
+                                uint32_t generation, void* stream);
 }
 
 namespace ikun {
@@ -72,12 +84,21 @@ struct InfcclFunctions {
     bool loaded() const { return lib_handle != nullptr && allreduce_launch != nullptr; }
 };
 
+struct InfcclCollectiveFunctions {
+    void* lib_handle = nullptr;
+    fn_broadcast  broadcast = nullptr;
+    fn_allgather  allgather = nullptr;
+
+    bool loaded() const { return lib_handle != nullptr; }
+};
+
 struct CollectiveRunnerState {
     CollectiveRunnerConfig config;
 
-    // CUDA kernel backend
-    InfcclFunctions funcs;
-    InfcclHandles*  handles = nullptr;  // device-side pointer from create_handles
+    // CUDA kernel backends
+    InfcclFunctions funcs;                // infccl_allreduce.so
+    InfcclCollectiveFunctions coll_funcs; // infccl_collectives.so (optional)
+    InfcclHandles*  handles = nullptr;    // device-side pointer from create_handles
 
     // Lifecycle
     bool finalized = false;
@@ -142,6 +163,47 @@ InfcclFunctions load_infccl(const std::string& path) {
 
     if (f.loaded()) {
         LOG(INFO) << "[ikun::Runner] Loaded infccl from " << so_path;
+    }
+    return f;
+}
+
+/// Load infccl_collectives.so (optional — provides broadcast, allgather, etc.)
+InfcclCollectiveFunctions load_infccl_collectives(const std::string& base_path) {
+    InfcclCollectiveFunctions f;
+
+    // Derive collectives .so path from the allreduce .so path
+    std::string so_path;
+    if (!base_path.empty()) {
+        // Replace "allreduce" with "collectives" in the path
+        auto pos = base_path.find("allreduce");
+        if (pos != std::string::npos) {
+            so_path = base_path;
+            so_path.replace(pos, 9, "collectives");
+        }
+    }
+    if (so_path.empty()) {
+        // Try common locations
+        static const char* candidates[] = {
+            "infccl/lib/infccl_collectives.so",
+            "./lib/infccl_collectives.so",
+            "/usr/local/lib/infccl_collectives.so",
+        };
+        for (const auto& c : candidates) {
+            void* h = dlopen(c, RTLD_LAZY | RTLD_LOCAL);
+            if (h) { dlclose(h); so_path = c; break; }
+        }
+    }
+
+    if (so_path.empty()) return f;
+
+    f.lib_handle = dlopen(so_path.c_str(), RTLD_LAZY | RTLD_LOCAL);
+    if (!f.lib_handle) return f;
+
+    f.broadcast = (fn_broadcast)dlsym(f.lib_handle, "infccl_broadcast");
+    f.allgather = (fn_allgather)dlsym(f.lib_handle, "infccl_allgather");
+
+    if (f.broadcast || f.allgather) {
+        LOG(INFO) << "[ikun::Runner] Loaded collectives from " << so_path;
     }
     return f;
 }
@@ -248,6 +310,9 @@ Status CollectiveRunner::create_comm(CommHandle& handle,
     } else {
         LOG(WARNING) << "[ikun::Runner] No infccl backend — NCCL-only mode";
     }
+
+    // Also try to load collectives .so (broadcast, allgather, etc.)
+    state->coll_funcs = load_infccl_collectives(config.custom_ar_so_path);
 
     handle.state_ = std::move(state);
     return Status::kOk;
@@ -360,6 +425,66 @@ Status CollectiveRunner::allreduce_coalesced(
 }
 
 // ============================================================================
+// CollectiveRunner — broadcast and allgather
+// ============================================================================
+
+Status CollectiveRunner::broadcast(CommHandle& handle,
+                                    void* data, int64_t count, DataType dtype,
+                                    int32_t root, void* stream) {
+    if (!handle.state_ || !handle.state_->finalized)
+        return Status::kErrorNotFinalized;
+
+    auto& s = *handle.state_;
+    const uint32_t gen = s.generation.fetch_add(1, std::memory_order_relaxed);
+
+    // Try custom P2P broadcast if available
+    if (s.handles && s.coll_funcs.broadcast) {
+        int result = s.coll_funcs.broadcast(
+            s.handles, data, count, to_infccl_dtype(dtype),
+            root, s.config.rank, s.config.world_size,
+            gen, stream);
+        if (result == 0) {
+            s.custom_ar_count.fetch_add(1, std::memory_order_relaxed);
+            return Status::kOk;
+        }
+        LOG(WARNING) << "[ikun::Runner] Custom broadcast failed, falling back to NCCL";
+    }
+
+    // NCCL fallback (actual call in Python layer)
+    s.nccl_count.fetch_add(1, std::memory_order_relaxed);
+    return Status::kOk;
+}
+
+Status CollectiveRunner::allgather(CommHandle& handle,
+                                    void* output, const void* input,
+                                    int64_t count, DataType dtype,
+                                    void* stream) {
+    if (!handle.state_ || !handle.state_->finalized)
+        return Status::kErrorNotFinalized;
+
+    auto& s = *handle.state_;
+    const uint32_t gen = s.generation.fetch_add(1, std::memory_order_relaxed);
+
+    // Try custom P2P allgather if available
+    if (s.handles && s.coll_funcs.allgather) {
+        int result = s.coll_funcs.allgather(
+            s.handles, output, input,
+            count, to_infccl_dtype(dtype),
+            s.config.rank, s.config.world_size,
+            gen, stream);
+        if (result == 0) {
+            s.custom_ar_count.fetch_add(1, std::memory_order_relaxed);
+            return Status::kOk;
+        }
+        LOG(WARNING) << "[ikun::Runner] Custom allgather failed, falling back to NCCL";
+    }
+
+    // NCCL fallback (actual call in Python layer)
+    s.nccl_count.fetch_add(1, std::memory_order_relaxed);
+    return Status::kOk;
+}
+
+// ============================================================================
 // CollectiveRunner — teardown
 // ============================================================================
 
@@ -375,6 +500,10 @@ void CollectiveRunner::destroy(CommHandle& handle) {
     if (s.funcs.lib_handle) {
         dlclose(s.funcs.lib_handle);
         s.funcs.lib_handle = nullptr;
+    }
+    if (s.coll_funcs.lib_handle) {
+        dlclose(s.coll_funcs.lib_handle);
+        s.coll_funcs.lib_handle = nullptr;
     }
 
     LOG(INFO) << "[ikun::Runner] Destroyed comm rank=" << s.config.rank

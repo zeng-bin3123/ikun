@@ -2,20 +2,25 @@
 # Build and test the ikun collective runner (host-side only, no CUDA needed).
 #
 # Strategy: compile with stub glog/gflags headers if the system ones are missing.
-# This tests the orchestration logic without the full xllm framework.
+# When system libs ARE present, link against them.
 set -eo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")"
 ROOT="$(pwd)"
 
 BUILD_DIR="$ROOT/build_runner"
+rm -rf "$BUILD_DIR"
 mkdir -p "$BUILD_DIR"
 
 # Check if we have the real libs
 HAS_GLOG=false
 HAS_GFLAGS=false
 pkg-config --exists libglog 2>/dev/null && HAS_GLOG=true
-dpkg -l libgflags-dev &>/dev/null 2>&1 && HAS_GFLAGS=true
+pkg-config --exists gflags 2>/dev/null && HAS_GFLAGS=true
+# Fallback check for gflags (not always in pkg-config)
+if ! $HAS_GFLAGS; then
+    dpkg -l libgflags-dev &>/dev/null 2>&1 && HAS_GFLAGS=true
+fi
 
 echo "[build] glog=$HAS_GLOG gflags=$HAS_GFLAGS"
 
@@ -23,7 +28,15 @@ echo "[build] glog=$HAS_GLOG gflags=$HAS_GFLAGS"
 STUB_DIR="$BUILD_DIR/stubs"
 mkdir -p "$STUB_DIR/glog" "$STUB_DIR/gflags"
 
-if ! $HAS_GLOG; then
+INCLUDE_FLAGS="-I$ROOT/core -I$ROOT/core/common"
+LINK_LIBS="-ldl -lpthread"
+
+if $HAS_GLOG; then
+    GLOG_CFLAGS="$(pkg-config --cflags libglog 2>/dev/null)" || true
+    GLOG_LIBS="$(pkg-config --libs libglog 2>/dev/null)" || GLOG_LIBS="-lglog"
+    INCLUDE_FLAGS="$INCLUDE_FLAGS $GLOG_CFLAGS"
+    LINK_LIBS="$LINK_LIBS $GLOG_LIBS"
+else
     cat > "$STUB_DIR/glog/logging.h" << 'STUBEOF'
 #pragma once
 #include <iostream>
@@ -34,9 +47,15 @@ if ! $HAS_GLOG; then
 #define CHECK_GE(a,b) CHECK((a)>=(b))
 #define CHECK_LT(a,b) CHECK((a)<(b))
 STUBEOF
+    INCLUDE_FLAGS="$INCLUDE_FLAGS -I$STUB_DIR"
 fi
 
-if ! $HAS_GFLAGS; then
+if $HAS_GFLAGS; then
+    GFLAGS_CFLAGS="$(pkg-config --cflags gflags 2>/dev/null)" || true
+    GFLAGS_LIBS="$(pkg-config --libs gflags 2>/dev/null)" || GFLAGS_LIBS="-lgflags"
+    INCLUDE_FLAGS="$INCLUDE_FLAGS $GFLAGS_CFLAGS"
+    LINK_LIBS="$LINK_LIBS $GFLAGS_LIBS"
+else
     cat > "$STUB_DIR/gflags/gflags.h" << 'STUBEOF'
 #pragma once
 #include <cstdint>
@@ -50,11 +69,13 @@ if ! $HAS_GFLAGS; then
 #define DEFINE_string(name, val, desc) std::string FLAGS_##name = val
 #define DEFINE_bool(name, val, desc) bool FLAGS_##name = val
 STUBEOF
+    INCLUDE_FLAGS="$INCLUDE_FLAGS -I$STUB_DIR"
 fi
 
-# Compile the runner
-INCLUDE_FLAGS="-I$ROOT/core -I$ROOT/core/common -I$STUB_DIR"
 CXXFLAGS="-std=c++17 -Wall -Wextra -O2 -DUSE_ILU"
+
+echo "[build] INCLUDE_FLAGS=$INCLUDE_FLAGS"
+echo "[build] LINK_LIBS=$LINK_LIBS"
 
 echo "[build] Compiling ikun_collective_runner.cpp ..."
 g++ $CXXFLAGS $INCLUDE_FLAGS \
@@ -68,10 +89,9 @@ g++ $CXXFLAGS $INCLUDE_FLAGS \
 
 echo "[build] Linking test_runner ..."
 g++ $BUILD_DIR/ikun_collective_runner.o $BUILD_DIR/test_runner.o \
-    -o "$BUILD_DIR/test_runner" -ldl -lpthread 2>&1
+    -o "$BUILD_DIR/test_runner" $LINK_LIBS 2>&1
 
 echo "[build] Running test_runner ..."
 "$BUILD_DIR/test_runner" 2>&1
 
 echo "[build] Done."
-

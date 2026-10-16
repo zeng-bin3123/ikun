@@ -205,6 +205,19 @@ public:
                                       const std::vector<TensorDesc>& tensors,
                                       ReduceOp op, void* stream);
 
+    /// Phase 5c: Broadcast from root rank to all others.
+    /// Uses infccl_collectives.so if available, else NCCL fallback.
+    static Status broadcast(CommHandle& handle,
+                            void* data, int64_t count, DataType dtype,
+                            int32_t root, void* stream);
+
+    /// Phase 5d: Allgather — each rank contributes its chunk, all get the full result.
+    /// output must hold count * world_size elements.
+    static Status allgather(CommHandle& handle,
+                            void* output, const void* input,
+                            int64_t count, DataType dtype,
+                            void* stream);
+
     /// Phase 6: Destroy communicator and release all resources.
     static void destroy(CommHandle& handle);
 
