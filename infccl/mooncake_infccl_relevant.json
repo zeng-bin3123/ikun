@@ -1,0 +1,2816 @@
+{
+  "collective_ops": [
+    {
+      "sha": "20fc0bc4",
+      "date": "2026-10-12",
+      "author": "Zhanhao Cao",
+      "msg": "[PG][2/N] Add IBGDA route to device collectives (#3914)"
+    },
+    {
+      "sha": "d603a5af",
+      "date": "2026-10-09",
+      "author": "Lancer",
+      "msg": "[PG][Bugfix] Handle Non-Contiguous Tensors in Collectives (#4483)"
+    },
+    {
+      "sha": "ef2b8eb7",
+      "date": "2026-09-30",
+      "author": "Zhanhao Cao",
+      "msg": "[PG][1/N] Initialize the new collective framework (#3484)"
+    },
+    {
+      "sha": "d06806d1",
+      "date": "2026-07-27",
+      "author": "Mohammad Miadh Angkad",
+      "msg": "[PG] Forward collectives through the backend shim for PyTorch 2.13 (#3122)"
+    },
+    {
+      "sha": "0a9c9937",
+      "date": "2026-04-16",
+      "author": "ZiWei Yuan",
+      "msg": "[PG][TENT] Fix CUDA collective wait semantics and NVLink small-transfer completion (#1863)"
+    },
+    {
+      "sha": "b9a593c5",
+      "date": "2026-03-31",
+      "author": "ZiWei Yuan",
+      "msg": "[PG][TENT] Fix first-collective hangs on NVLink/MNNVL bootstrap (#1755)"
+    },
+    {
+      "sha": "4f76f12b",
+      "date": "2026-02-01",
+      "author": "\u80e1\u7693\u7136",
+      "msg": "[PG] Impelemented support for additional collective primitives: **`gather`**, **`scatter`**, and **`reduce`** in the Mooncake backend (#1469)"
+    },
+    {
+      "sha": "0bc781df",
+      "date": "2025-10-15",
+      "author": "Xun Sun",
+      "msg": "[Misc] Fix chunked impl of _reduce_scatter_base (#931)"
+    }
+  ],
+  "p2p_ipc": [
+    {
+      "sha": "9c0528d9",
+      "date": "2026-10-16",
+      "author": "\u65e0\u94a9",
+      "msg": "[Store] Avoid staging for remote GPU reads (#3431)"
+    },
+    {
+      "sha": "fc4da46e",
+      "date": "2026-10-15",
+      "author": "Lancer",
+      "msg": "[TENT][BUGFIX] Respect peer rail policy in TENT allocation (#4435)"
+    },
+    {
+      "sha": "3739fbda",
+      "date": "2026-10-14",
+      "author": "XinyuYe-Intel",
+      "msg": "[Store] Add Intel XPU host-staging path to the Store client, Python e2e and vLLM-XPU smoke tests (#4270)"
+    },
+    {
+      "sha": "b0a50fad",
+      "date": "2026-10-12",
+      "author": "Liqian Lin",
+      "msg": "[Bugfix][TENT] Preserve peer handles after named notifications (#4252)"
+    },
+    {
+      "sha": "66bf7412",
+      "date": "2026-10-12",
+      "author": "Yufeng He",
+      "msg": "[Bugfix][TransferEngine] Keep a stalled peer from wedging the handshake daemon (#4451)"
+    },
+    {
+      "sha": "8e231d5b",
+      "date": "2026-10-10",
+      "author": "Xun Sun",
+      "msg": "[EP] Enable MACA legacy EP with shared P2P and IBGDA device paths (#4091)"
+    },
+    {
+      "sha": "d645d6cd",
+      "date": "2026-10-09",
+      "author": "Lancer",
+      "msg": "[PG][Bugfix] Reset P2P Send Timeout on Progress (#4496)"
+    },
+    {
+      "sha": "b7595de3",
+      "date": "2026-10-08",
+      "author": "Charles xu",
+      "msg": "[Bugfix] Reconnect idle TCP lanes after peer close (#4234)"
+    },
+    {
+      "sha": "a6d66e3b",
+      "date": "2026-10-07",
+      "author": "yaojiejia",
+      "msg": "[Bugfix][P2P-Store] Validate the caller's sizeList against the stored payload layout in GetReplica (#4304)"
+    },
+    {
+      "sha": "445c0609",
+      "date": "2026-10-06",
+      "author": "FREETRUMP",
+      "msg": "[Bugfix][TENT] Retry segment update notification after peer restart (#4221)"
+    },
+    {
+      "sha": "2196923f",
+      "date": "2026-09-28",
+      "author": "yashwant singh",
+      "msg": "[Doc] Document the WITH_NVIDIA_PEERMEM default and the \"Bad address [14]\" GPU registration error (#4352)"
+    },
+    {
+      "sha": "003e0bba",
+      "date": "2026-09-20",
+      "author": "XinyuYe-Intel",
+      "msg": "[TENT] Add Intel XPU transport, routing and staging to the Transfer Engine (#4157)"
+    },
+    {
+      "sha": "5ebe5fcf",
+      "date": "2026-09-16",
+      "author": "Alibaba-GuoYouzhi",
+      "msg": "[Bugfix] Honor MC_FORCE_HCA before automatic GPU P2P fallback (#4151)"
+    },
+    {
+      "sha": "a61a987d",
+      "date": "2026-09-16",
+      "author": "Aoi",
+      "msg": "[Store] Centralize MasterService test access in a test-only peer (#4135)"
+    },
+    {
+      "sha": "fdf45531",
+      "date": "2026-09-15",
+      "author": "Lewis",
+      "msg": "[Bugfix][TENT] Detect dead peers in CheckSegmentStatus under MC_USE_TENT (#4109)"
+    },
+    {
+      "sha": "f8fca5f3",
+      "date": "2026-09-15",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Fix P2P epoch matching and destroy/reinit test ordering (#4106)"
+    },
+    {
+      "sha": "4c72064c",
+      "date": "2026-09-11",
+      "author": "Chlins Zhang",
+      "msg": "[P2P-Store] Back off transfer status polling after a spin budget (#3851)"
+    },
+    {
+      "sha": "debc2a23",
+      "date": "2026-09-11",
+      "author": "Liqian Lin",
+      "msg": "[TENT] Rotate HP TCP lanes independently per peer (#3987)"
+    },
+    {
+      "sha": "5accaaff",
+      "date": "2026-09-10",
+      "author": "waizuichougou",
+      "msg": "[P2PStore] Fix GetReplica metadata recheck retries (#3921)"
+    },
+    {
+      "sha": "715d1cfc",
+      "date": "2026-09-07",
+      "author": "Dao007forever",
+      "msg": "[Bugfix][TransferEngine] Prevent peer failures from latching RDMA contexts inactive (#3559)"
+    },
+    {
+      "sha": "e58ad953",
+      "date": "2026-09-04",
+      "author": "dependabot[bot]",
+      "msg": "Bump google.golang.org/grpc in /mooncake-p2p-store/src/p2pstore (#3827)"
+    },
+    {
+      "sha": "6957e760",
+      "date": "2026-09-03",
+      "author": "Chlins Zhang",
+      "msg": "[P2P-Store] Release batch IDs on all performTransfer exit paths (#3770)"
+    },
+    {
+      "sha": "8c1edf46",
+      "date": "2026-09-03",
+      "author": "Chlins Zhang",
+      "msg": "[P2P-Store] Unregister buffers on GetReplica failure paths (#3783)"
+    },
+    {
+      "sha": "128ba6c8",
+      "date": "2026-09-02",
+      "author": "Stary",
+      "msg": "[Bugfix][TENT] Stop tebench workers from aborting on peer death (#3768)"
+    },
+    {
+      "sha": "1377172a",
+      "date": "2026-09-01",
+      "author": "Feng Ren",
+      "msg": "[Bugfix][TransferEngine] Serialize RDMA endpoint lifecycle by peer owner (#3718)"
+    },
+    {
+      "sha": "c5f10232",
+      "date": "2026-09-01",
+      "author": "Feng Ren",
+      "msg": "[TE] Increase kDefaultQueuedTransfersPerPeer and kDefaultPendingAdmissionsPerPeer (#3710)"
+    },
+    {
+      "sha": "06e82daa",
+      "date": "2026-08-31",
+      "author": "Stary",
+      "msg": "[Bugfix][TENT] Retry RDMA bootstrap after stale peer endpoints (#3755)"
+    },
+    {
+      "sha": "b9474d29",
+      "date": "2026-08-31",
+      "author": "Stary",
+      "msg": "[TENT] Share the CUDA IPC handle across buffers in one cudaMalloc segment (#3679)"
+    },
+    {
+      "sha": "8dc90f8c",
+      "date": "2026-08-27",
+      "author": "Stary",
+      "msg": "[TENT] Fix IPC relocation to not switch to the peer's device ordinal (#3678)"
+    },
+    {
+      "sha": "c3aff0cd",
+      "date": "2026-08-27",
+      "author": "ThunGuo",
+      "msg": "[TransferEngine] Reuse TCP CUDA staging buffers across chunks (#3562)"
+    },
+    {
+      "sha": "68f9756d",
+      "date": "2026-08-27",
+      "author": "Azuki Junjun",
+      "msg": "TENT: flush a peer's pooled RPC connections when one of them fails (#3684)"
+    },
+    {
+      "sha": "e94a0b86",
+      "date": "2026-08-18",
+      "author": "R0CKSTAR",
+      "msg": "[TransferEngine] Add MUSA IPC transport with batched copies (#3035)"
+    },
+    {
+      "sha": "5b9efbca",
+      "date": "2026-08-16",
+      "author": "Ruiqing Feng",
+      "msg": "[TENT] Make ProxyManager staging cleanup safe and asynchronous (#3380)"
+    },
+    {
+      "sha": "c9e8ddd6",
+      "date": "2026-08-14",
+      "author": "JunlinW",
+      "msg": "[Build] Stage native _ep extension into ep_pg_staging for wheel packaging (#3432)"
+    },
+    {
+      "sha": "11fe0780",
+      "date": "2026-08-14",
+      "author": "Cruz Zhao",
+      "msg": "[store] Avoid staging copy for same node tensor put (#3159)"
+    },
+    {
+      "sha": "e05d4290",
+      "date": "2026-08-12",
+      "author": "mokeke",
+      "msg": "[Store] Fix current-stream readiness for DummyClient CUDA IPC tensor writes (#3303)"
+    },
+    {
+      "sha": "3a6c786c",
+      "date": "2026-08-11",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Avoid staging for same-process GPU reads (#3197)"
+    },
+    {
+      "sha": "a2933849",
+      "date": "2026-08-11",
+      "author": "Posedge_Lin",
+      "msg": "[Transfer Engine] Schedule TCP transfers on bounded per-peer connection lanes (#2974)"
+    },
+    {
+      "sha": "41bfbebe",
+      "date": "2026-08-08",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Support inplace rejoin and fix p2p recovery (#3323)"
+    },
+    {
+      "sha": "a6b4db4c",
+      "date": "2026-08-05",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Fix CUDA IPC ranged read build (#3294)"
+    },
+    {
+      "sha": "c9d5b3b3",
+      "date": "2026-08-04",
+      "author": "Ishaan",
+      "msg": "[TENT] Retire stale endpoint on peer reconnect bootstrap (#3188)"
+    },
+    {
+      "sha": "22c8fa81",
+      "date": "2026-08-05",
+      "author": "Cruz Zhao",
+      "msg": "[Store] support CUDA IPC for dummy client buffers (#3234)"
+    },
+    {
+      "sha": "faae8dd4",
+      "date": "2026-08-04",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Bound peer key lookups by the published vector length (#3265)"
+    },
+    {
+      "sha": "e822aceb",
+      "date": "2026-08-03",
+      "author": "Stary",
+      "msg": "[Bugfix] Use GPU_PREFIX for HCA peer affinity under USE_HIP (#3248)"
+    },
+    {
+      "sha": "17358f74",
+      "date": "2026-07-31",
+      "author": "Evan Harris",
+      "msg": "[TransferEngine] Reject peer segment descriptors with more keys than devices (#3209)"
+    },
+    {
+      "sha": "89142250",
+      "date": "2026-07-28",
+      "author": "Jiangtian Feng",
+      "msg": "[P2P-Store] Fix double-close panic, refCount copy, and offset reset (#2375)"
+    },
+    {
+      "sha": "021855df",
+      "date": "2026-07-16",
+      "author": "Dao007forever",
+      "msg": "[Bugfix][TransferEngine] Pause active reconnects to failed peers (#2941)"
+    },
+    {
+      "sha": "f8c9667a",
+      "date": "2026-07-13",
+      "author": "Dayuxiaoshui",
+      "msg": "[TransferEngine] Optimize MACA P2P copy path (#2774)"
+    },
+    {
+      "sha": "130b959e",
+      "date": "2026-07-09",
+      "author": "Yihe Liu",
+      "msg": "[Bugfix][TENT] Fix silent TPU data corruption for transfers larger than one staging chunk (#2815)"
+    },
+    {
+      "sha": "e07774fb",
+      "date": "2026-07-08",
+      "author": "dependabot[bot]",
+      "msg": "[Build] Bump golang.org/x/net in /mooncake-p2p-store/src/p2pstore (#2708)"
+    },
+    {
+      "sha": "4febcca5",
+      "date": "2026-07-06",
+      "author": "Stary",
+      "msg": "[TE] Fix MNNVL staging path reading capabilities from RDMA transport (#2751)"
+    },
+    {
+      "sha": "1fe59e6a",
+      "date": "2026-07-04",
+      "author": "Yihe Liu",
+      "msg": "[TE] Add TPU (PJRT) staging support to TENT (#2733)"
+    },
+    {
+      "sha": "812eb8d6",
+      "date": "2026-07-02",
+      "author": "dependabot[bot]",
+      "msg": "[Build] Bump google.golang.org/grpc in /mooncake-p2p-store/src/p2pstore (#1789)"
+    },
+    {
+      "sha": "76c25fe1",
+      "date": "2026-07-01",
+      "author": "Aoi",
+      "msg": "[Store] Refactor accelerator device registry and staging copies (#2583)"
+    },
+    {
+      "sha": "9b54e61a",
+      "date": "2026-07-01",
+      "author": "Dayuxiaoshui",
+      "msg": "[EP]:Stabilize MACA Expert Parallelism P2P Fast Path (#2592)"
+    },
+    {
+      "sha": "89e8cd66",
+      "date": "2026-06-29",
+      "author": "hzt123123",
+      "msg": "Hca peer affinity (#2616)"
+    },
+    {
+      "sha": "9843b897",
+      "date": "2026-06-26",
+      "author": "Yoray Zack",
+      "msg": "[PG] Fix elastic P2P after max_world_size recovery (#2623)"
+    },
+    {
+      "sha": "1e7db9ec",
+      "date": "2026-06-22",
+      "author": "fatSheep",
+      "msg": "[Doc] Rework Mooncake Store deployment guide: P2P-first quick start, three client deployment methods, flag fixes (#2532)"
+    },
+    {
+      "sha": "60452b6e",
+      "date": "2026-06-12",
+      "author": "Xun Sun",
+      "msg": "[EP] integrate Device API (P2pTransport/RdmaTransport) \u2014 CUDA only (#2382)"
+    },
+    {
+      "sha": "bc17c9b6",
+      "date": "2026-06-01",
+      "author": "Copilot",
+      "msg": "Fix P2PHANDSHAKE in dual-NIC container setups via MC_RDMA_BIND_ADDRESS (#2280)"
+    },
+    {
+      "sha": "8906bdef",
+      "date": "2026-05-22",
+      "author": "Shangming Cai",
+      "msg": "[chore] Set default for WITH_NVIDIA_PEERMEM to true (#2192)"
+    },
+    {
+      "sha": "7bf33267",
+      "date": "2026-05-21",
+      "author": "Copilot",
+      "msg": "[Doc] update WITH_NVIDIA_PEERMEM from cmake flag to runtime env var (PR #2066) (#2164)"
+    },
+    {
+      "sha": "e73f785f",
+      "date": "2026-05-20",
+      "author": "Teng Ma",
+      "msg": "[CI/Build] Switch WITH_NVIDIA_PEERMEM to env variable (#2066)"
+    },
+    {
+      "sha": "84df45a9",
+      "date": "2026-05-07",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Refactor P2PProxy with shared chunk pools and receiver-driven credit-based flow control (#1971)"
+    },
+    {
+      "sha": "c3bafbed",
+      "date": "2026-05-07",
+      "author": "Xun Sun",
+      "msg": "[PG] Fix P2P regression caused by ProcessGroup inheritance (#2043)"
+    },
+    {
+      "sha": "b5ded0c4",
+      "date": "2026-05-06",
+      "author": "Copilot",
+      "msg": "[Doc] Update README news: add Apr 29 2026 lmsys P2P weight transfer blog (#2038)"
+    },
+    {
+      "sha": "c02b6696",
+      "date": "2026-05-03",
+      "author": "\u738b\u9e64\u7537",
+      "msg": "[TE] Fix EFA segfault race and DP>1 peer_map_ thrashing (#2023)"
+    },
+    {
+      "sha": "634b7097",
+      "date": "2026-04-23",
+      "author": "\u738b\u9e64\u7537",
+      "msg": "[TE] EFA SRD shared-endpoint refactor: drop per-peer fid_ep model (#1944)"
+    },
+    {
+      "sha": "17d118ad",
+      "date": "2026-04-08",
+      "author": "ZiWei Yuan",
+      "msg": "[PG][TE][TENT] Add dedicated peer liveness probe for recovery and enable elastic GPU test (#1808)"
+    },
+    {
+      "sha": "a7518f38",
+      "date": "2026-04-08",
+      "author": "Yufeng He",
+      "msg": "[TENT] Fix NVLink IPC address for sub-allocated GPU tensors (#1831)"
+    },
+    {
+      "sha": "fdee379b",
+      "date": "2026-04-02",
+      "author": "Teng Ma",
+      "msg": "[P2P] fix: cannot disable NV_PEERMEM and enable CUDA at the same time (#1797)"
+    },
+    {
+      "sha": "1818be85",
+      "date": "2026-03-25",
+      "author": "Xun Sun",
+      "msg": "[PG] Increase kP2PBufferSize to unlock full performance potential (#1740)"
+    },
+    {
+      "sha": "ece427ed",
+      "date": "2026-03-25",
+      "author": "JunlinW",
+      "msg": "[PG] optimize p2p-proxy buffer size (#1735)"
+    },
+    {
+      "sha": "47b016d0",
+      "date": "2026-03-18",
+      "author": "Xun Sun",
+      "msg": "[PG] force register local memory for P2P memory regions (#1690)"
+    },
+    {
+      "sha": "68c1da7c",
+      "date": "2026-03-12",
+      "author": "ishandhanani",
+      "msg": "Fix NVLink IPC offset corruption for sub-allocated GPU tensors (#1622)"
+    },
+    {
+      "sha": "ea595940",
+      "date": "2026-03-10",
+      "author": "UNIDY",
+      "msg": "[EP] Enable Fabric Mem only if MC_USE_NVLINK_IPC is explicitly set to zero"
+    },
+    {
+      "sha": "2456b0c3",
+      "date": "2026-03-07",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Share P2PProxy/ConnectionPoller threads across backends. (#1607)"
+    },
+    {
+      "sha": "752ff3d5",
+      "date": "2026-03-02",
+      "author": "licunlong",
+      "msg": "p2p-store: expose GetLocalIpAndPort/GetLocalServerName in Go API (#1579)"
+    },
+    {
+      "sha": "99da058d",
+      "date": "2026-02-24",
+      "author": "Yue Chen",
+      "msg": "[PG] Implement efficient P2P proxy for low-latency send/recv communication (#1533)"
+    },
+    {
+      "sha": "b847d5c4",
+      "date": "2026-02-14",
+      "author": "1180300720",
+      "msg": "[TE] Ubshmem transport support ipc memory and build allocator when set USE_UBSHMEM=ON (#1519)"
+    },
+    {
+      "sha": "dc432620",
+      "date": "2026-02-12",
+      "author": "Donghun Lee \uc774\ub3d9\ud6c8",
+      "msg": "implement cpp methods for p2p connection (#1539)"
+    },
+    {
+      "sha": "d9a915b6",
+      "date": "2026-01-09",
+      "author": "Anatolii Rozanov",
+      "msg": "[TE/HIP] Switch to IPC mode by default and enable P2P access  (#1344)"
+    },
+    {
+      "sha": "d5094ffa",
+      "date": "2025-12-22",
+      "author": "Xun Sun",
+      "msg": "[CI] Disable EP's test_mooncake_backend_p2p_cpu in CI workflow (#1256)"
+    },
+    {
+      "sha": "cae1728e",
+      "date": "2025-12-20",
+      "author": "Lewis",
+      "msg": "[TE] feat: Support H20 intraNode nvlink by introducing fallback mechanism to leverage cudaIPC (#1234)"
+    },
+    {
+      "sha": "2d80ed15",
+      "date": "2025-10-05",
+      "author": "doujiang24",
+      "msg": "[TransferEngine] initiator_test script: make it works with P2PHANDSHAKE. (#907)"
+    },
+    {
+      "sha": "af4fb4d5",
+      "date": "2025-09-22",
+      "author": "JinYan Su",
+      "msg": "feat(store): support transfer engine p2phandshake (#852)"
+    },
+    {
+      "sha": "3554015b",
+      "date": "2025-09-09",
+      "author": "licunlong",
+      "msg": "[p2pstore] allow topologyMatrix to be empty (#807)"
+    },
+    {
+      "sha": "1350b748",
+      "date": "2025-08-08",
+      "author": "William Chang",
+      "msg": "[TE] Add ability to do RDMA without nvidia-peermem (#704)"
+    },
+    {
+      "sha": "bdba25b4",
+      "date": "2025-08-01",
+      "author": "Stary",
+      "msg": "bugfix(nvlink): Add explicit P2P access enablement and error handling for NvlinkTransport (#683)"
+    },
+    {
+      "sha": "8eceaf5e",
+      "date": "2025-07-01",
+      "author": "Feng Ren",
+      "msg": "[P2P Store] Add cuda link option when it is installed (#560)"
+    },
+    {
+      "sha": "84ba253c",
+      "date": "2025-05-20",
+      "author": "dependabot[bot]",
+      "msg": "chore(deps): bump golang.org/x/net in /mooncake-p2p-store/src/p2pstore (#376)"
+    },
+    {
+      "sha": "3520f615",
+      "date": "2025-05-05",
+      "author": "doujiang24",
+      "msg": "[Transfer Engine] check both local & peer nic path in setupConnectionsByPassive. (#324)"
+    },
+    {
+      "sha": "f6b6cbab",
+      "date": "2025-04-15",
+      "author": "doujiang24",
+      "msg": "[TransferEngine] feature: support p2phandshake without metadata server (#240)"
+    },
+    {
+      "sha": "d6cd73b6",
+      "date": "2025-03-14",
+      "author": "Feng Ren",
+      "msg": "[FIX] golang vulnerabilities in P2P store"
+    },
+    {
+      "sha": "0a7b5dec",
+      "date": "2025-02-17",
+      "author": "Feng Ren",
+      "msg": "Fix P2P store bugs and improvement (#80)"
+    },
+    {
+      "sha": "ce283025",
+      "date": "2025-01-03",
+      "author": "doujiang24",
+      "msg": "[p2pstore] fix memory leaking in cgo."
+    },
+    {
+      "sha": "6d4adcfd",
+      "date": "2024-11-28",
+      "author": "doujiang24",
+      "msg": "fix the p2pstore go module name, make it could be imported in other projects."
+    }
+  ],
+  "topology": [
+    {
+      "sha": "a2c6c5b7",
+      "date": "2026-10-15",
+      "author": "\u65e0\u94a9",
+      "msg": "[2/3] [Store] Add EGM-backed Store pool over NVLink (#3335)"
+    },
+    {
+      "sha": "4a760599",
+      "date": "2026-10-14",
+      "author": "Yizheng Jiao",
+      "msg": "[TransferEngine] Pair Data Direct registrations and topology with the GPU's PCI root (#4612)"
+    },
+    {
+      "sha": "a9983dcd",
+      "date": "2026-10-13",
+      "author": "f0ncu",
+      "msg": "[TE] efa: fall back to any keyed NIC when selectDevice's topology walk misses (#4594)"
+    },
+    {
+      "sha": "6c07cb78",
+      "date": "2026-09-10",
+      "author": "JinYan Su",
+      "msg": "[TENT] Export EGM host memory over multi-node NVLink (opt-in) (#3978)"
+    },
+    {
+      "sha": "6d946ef3",
+      "date": "2026-09-03",
+      "author": "Stary",
+      "msg": "[Bugfix][TENT] Keep RailMonitor state across COW topology refreshes (#3832)"
+    },
+    {
+      "sha": "09dfb006",
+      "date": "2026-08-25",
+      "author": "Alexander Lee",
+      "msg": "[Bugfix][TENT] Fix RailMonitor topology use-after-free (#3598)"
+    },
+    {
+      "sha": "b32bdeba",
+      "date": "2026-08-24",
+      "author": "Lewis",
+      "msg": "fix(tent): synchronize with caller's per-thread stream before issuing NVLink/MNNVL batched copy (#3570)"
+    },
+    {
+      "sha": "266a966b",
+      "date": "2026-08-20",
+      "author": "Shangming Cai",
+      "msg": "[transfer-engine] Ship intra-node NVLink transport in x86_64 CUDA wheels (#3547)"
+    },
+    {
+      "sha": "0cff074a",
+      "date": "2026-08-15",
+      "author": "Stary",
+      "msg": "[TENT] Support custom NIC priority matrix and native topology dump (#3382)"
+    },
+    {
+      "sha": "3c63169a",
+      "date": "2026-08-04",
+      "author": "\u738b\u9e64\u7537",
+      "msg": "[TE] perf(efa): optionally register device memory only on topology-local NICs (#3219)"
+    },
+    {
+      "sha": "0a857714",
+      "date": "2026-08-04",
+      "author": "\u6c88\u51b2",
+      "msg": "[Store]Support VRAM Segment and NVLink transport within a single node (#3196)"
+    },
+    {
+      "sha": "75906c72",
+      "date": "2026-07-14",
+      "author": "Yanshu WANG",
+      "msg": "[store] Opt-in topology-aware remote replica scoring in SelectBestReplica (#2516)"
+    },
+    {
+      "sha": "6894c2d7",
+      "date": "2026-07-11",
+      "author": "Yanshu WANG",
+      "msg": "[TransferEngine] Add show-link diagnostic tool for NIC topology (#2820)"
+    },
+    {
+      "sha": "118382f4",
+      "date": "2026-07-06",
+      "author": "xiangui",
+      "msg": "[TE] Fix cross-GPU NVLink/MNNVL event-stream device mismatch (#2722) (#2754)"
+    },
+    {
+      "sha": "263090eb",
+      "date": "2026-07-03",
+      "author": "xiangui",
+      "msg": "[TE] Capture GPU device at registration time in MnnvlTransport / NVLinkTransport (#2691)"
+    },
+    {
+      "sha": "a325291c",
+      "date": "2026-07-02",
+      "author": "Stary",
+      "msg": "[CI] Fix build-musa: add missing MUSA mappings for nvlink_transport APIs (#2578) (#2710)"
+    },
+    {
+      "sha": "fac9d09d",
+      "date": "2026-06-29",
+      "author": "Jiangtian Feng",
+      "msg": "[TENT] Fix stale getTransferStatus in nvlink/mnnvl/ascend transports (#2505)"
+    },
+    {
+      "sha": "a06c866d",
+      "date": "2026-06-25",
+      "author": "Yufeng He",
+      "msg": "fix(maca): map cudaStreamQuery for the intra-node NVLink build (#2606)"
+    },
+    {
+      "sha": "d2ebfb08",
+      "date": "2026-06-24",
+      "author": "Lancer",
+      "msg": "[CI] Fix build-musa: add missing MUSA macro mappings for nvlink_transport APIs (#2575)"
+    },
+    {
+      "sha": "948e5a8b",
+      "date": "2026-06-18",
+      "author": "Jiangtian Feng",
+      "msg": "[TENT] Fix CUDA event leak in nvlink/mnnvl transports (#2507)"
+    },
+    {
+      "sha": "b6386a10",
+      "date": "2026-06-01",
+      "author": "Lewis",
+      "msg": "[TE] IntraNode NVLink transport: update cuMemcpyAsync to BatchAsyc for CUDA version >= 12.8 (#2251)"
+    },
+    {
+      "sha": "a72b540c",
+      "date": "2026-05-26",
+      "author": "Xiao Yang",
+      "msg": "Fix MACA nvlink allocator build by mapping CUmemAllocationHandleType (#2227)"
+    },
+    {
+      "sha": "1c3f1504",
+      "date": "2026-05-21",
+      "author": "Lewis",
+      "msg": "[TE] Fix pytorch precision problem when using IntraNode NVLINK (#2163)"
+    },
+    {
+      "sha": "d9e8aee0",
+      "date": "2026-05-20",
+      "author": "Lewis",
+      "msg": "[TE] Update IntraNode NVLink transfer method cuMemcpy -> cuMemcpyAsync (#2012)"
+    },
+    {
+      "sha": "87913517",
+      "date": "2026-05-11",
+      "author": "jinke",
+      "msg": "[tebench] support nvlink xport and register buffers per-allocation (#2073)"
+    },
+    {
+      "sha": "0a220f67",
+      "date": "2026-03-05",
+      "author": "ishandhanani",
+      "msg": "[TE] fix: check MC_INTRANODE_NVLINK before HCA auto-detection fallback (#1612)"
+    },
+    {
+      "sha": "6f6c95e4",
+      "date": "2026-01-22",
+      "author": "Lewis",
+      "msg": "Intra-Node NVLink related Docs modification (#1424)"
+    },
+    {
+      "sha": "c9d64c91",
+      "date": "2026-01-22",
+      "author": "Lewis",
+      "msg": "[TE] Nvlink intraNode Transport isolation  (#1341)"
+    },
+    {
+      "sha": "15930ac8",
+      "date": "2026-01-15",
+      "author": "shicanwei.scw",
+      "msg": "[TE]feat(topology): add IB device availability filtering (#1375)"
+    },
+    {
+      "sha": "6fa22a23",
+      "date": "2026-01-09",
+      "author": "Lewis",
+      "msg": "[TE] Revert nvlink_transport.cpp to previous version (#1342)"
+    },
+    {
+      "sha": "2749bc32",
+      "date": "2026-01-04",
+      "author": "Lewis",
+      "msg": "[TE] Add early mem backend detection method in NVLINK_allocator (#1296)"
+    },
+    {
+      "sha": "060f2bda",
+      "date": "2025-12-31",
+      "author": "Xun Sun",
+      "msg": "[EP] Use NVLink in EP if possible (#1308)"
+    },
+    {
+      "sha": "f6d9547f",
+      "date": "2025-12-17",
+      "author": "R0CKSTAR",
+      "msg": "[Build] Fix: add missing include path for cuda_alike.h in mooncake-transfer-engine/nvlink-allocator/build.sh (#1224)"
+    },
+    {
+      "sha": "22e6ad75",
+      "date": "2025-12-15",
+      "author": "\u65e9\u4e9b\u5e74",
+      "msg": "[TE] feat: add PCIe Relaxed Ordering (RO) support and RDMA traffic class (\u2026 (#1076)"
+    },
+    {
+      "sha": "7c024845",
+      "date": "2025-11-26",
+      "author": "popsiclexu",
+      "msg": "[TE/Topology] Enhance PCI distance calculation by considering NUMA node affinity (#1086)"
+    },
+    {
+      "sha": "7519ac90",
+      "date": "2025-11-24",
+      "author": "popsiclexu",
+      "msg": "[TE/Topology] Support device filtering when dumping topology (#1087)"
+    },
+    {
+      "sha": "657248b5",
+      "date": "2025-11-05",
+      "author": "Xun Sun",
+      "msg": "Remove `getCudaTopologyJson` (#1009)"
+    },
+    {
+      "sha": "d928c35c",
+      "date": "2025-11-03",
+      "author": "Shangming Cai",
+      "msg": "fix(ci): Modify build command for nvlink_allocator (#1001)"
+    },
+    {
+      "sha": "01516165",
+      "date": "2025-11-03",
+      "author": "JinYan Su",
+      "msg": "fix(ci): remove nvlink allocator --ci-build flag (#1003)"
+    },
+    {
+      "sha": "c629aa9f",
+      "date": "2025-09-19",
+      "author": "Shangming Cai",
+      "msg": "Fix nvlink_transport bug: revert #683 (#869)"
+    },
+    {
+      "sha": "f7b5de0d",
+      "date": "2025-08-06",
+      "author": "SCDESPERTATE",
+      "msg": "[Transfer-Engine] Add a tool to dump the topology discovered by Transfer-Engine  (#713)"
+    },
+    {
+      "sha": "011f407b",
+      "date": "2025-07-24",
+      "author": "Shangming Cai",
+      "msg": "Revert \"Fix NVlink accuracy drop issue (#663)\" (#665)"
+    },
+    {
+      "sha": "7e9bc8d1",
+      "date": "2025-07-24",
+      "author": "Feng Ren",
+      "msg": "Fix NVlink accuracy drop issue (#663)"
+    },
+    {
+      "sha": "b35ad5dd",
+      "date": "2025-07-16",
+      "author": "JinYan Su",
+      "msg": "ci: add --use-nvcc flag to build nvlink.so (#634)"
+    },
+    {
+      "sha": "5daa3863",
+      "date": "2025-07-16",
+      "author": "Shangming Cai",
+      "msg": "[Build] Fix nvlink allocator compile command (#534)"
+    },
+    {
+      "sha": "b4ca77d5",
+      "date": "2025-07-08",
+      "author": "staryxchen",
+      "msg": "feat(topology): improve HCA selection by considering PCIe distance"
+    },
+    {
+      "sha": "f96a5912",
+      "date": "2025-06-19",
+      "author": "Shangming Cai",
+      "msg": "[TransferEngine] Change option use_nvlink to use_mnnvl to clarify the usage (#525)"
+    },
+    {
+      "sha": "4e78b6e6",
+      "date": "2025-06-19",
+      "author": "Shangming Cai",
+      "msg": "[Build] Add allocator class to support nvlink for more use-cases (#524)"
+    },
+    {
+      "sha": "0a8e4c30",
+      "date": "2025-06-19",
+      "author": "Shangming Cai",
+      "msg": "[Build] Optimize nvlink allocator build logic and fix name issue (#523)"
+    },
+    {
+      "sha": "986c423f",
+      "date": "2025-06-18",
+      "author": "shangmingc",
+      "msg": "[Build] add nvlink hook into python package dir for local build (#517)"
+    },
+    {
+      "sha": "96c23ed0",
+      "date": "2025-06-13",
+      "author": "fzyzcjy",
+      "msg": "Fix NVLink transport error in multi-node scenarios (#485)"
+    },
+    {
+      "sha": "4d11e25f",
+      "date": "2025-06-13",
+      "author": "Teng Ma",
+      "msg": "[Build] fix build wheel if nvlink is disabled (#480)"
+    },
+    {
+      "sha": "38c435fc",
+      "date": "2025-06-11",
+      "author": "Feng Ren",
+      "msg": "Revert \"[TransferEngine] Fix minor bugs in NVLink transport and benchmark (#468)\" (#469)"
+    },
+    {
+      "sha": "ffaad6aa",
+      "date": "2025-06-11",
+      "author": "Feng Ren",
+      "msg": "[TransferEngine] Fix minor bugs in NVLink transport and benchmark (#468)"
+    },
+    {
+      "sha": "f09c501b",
+      "date": "2025-06-10",
+      "author": "JinYan Su",
+      "msg": "feat(ci): enable nvlink hook in build configuration (#465)"
+    },
+    {
+      "sha": "ab242f0d",
+      "date": "2025-06-10",
+      "author": "Feng Ren",
+      "msg": "[TransferEngine] Fix compilation bug in NVLink xport (#463)"
+    },
+    {
+      "sha": "c9bbdf81",
+      "date": "2025-06-09",
+      "author": "Feng Ren",
+      "msg": "[TransferEngine] Add debug information in NVLink xport register (#461)"
+    },
+    {
+      "sha": "5b706268",
+      "date": "2025-06-06",
+      "author": "Feng Ren",
+      "msg": "[TransferEngine] Enable NVLink transport across multiple processes (#442)"
+    },
+    {
+      "sha": "d1264ead",
+      "date": "2025-05-12",
+      "author": "JinYan Su",
+      "msg": "feat(transfer-engine): enhance logging for RPC and topology discovery (#352)"
+    },
+    {
+      "sha": "cab54b84",
+      "date": "2025-04-17",
+      "author": "Feng Ren",
+      "msg": "[TransferEngine] Add whitelist to the auto topology detection (#264)"
+    },
+    {
+      "sha": "ab8021d6",
+      "date": "2025-01-17",
+      "author": "doujiang24",
+      "msg": "[TransferEngine] change: auto discover topology & install transport. (#73)"
+    },
+    {
+      "sha": "00ca6cd5",
+      "date": "2025-01-10",
+      "author": "Nicholas",
+      "msg": "[TransferEngine] Add tests for `Topology` (#74)"
+    },
+    {
+      "sha": "fc049198",
+      "date": "2024-12-23",
+      "author": "Shaoyuan CHEN",
+      "msg": "[TransferEngine] Add topology discovery (#46)"
+    }
+  ],
+  "perf_opt": [
+    {
+      "sha": "5d77d344",
+      "date": "2026-10-16",
+      "author": "Xingyuan Wu",
+      "msg": "[Store] Add LastHitOnly lease selection to BatchProbeKey (#4314)"
+    },
+    {
+      "sha": "c3d05a7e",
+      "date": "2026-10-16",
+      "author": "SongOf",
+      "msg": "[Bugfix][TransferEngine] Fix classic tebench crashes on batch release and on worker failure (#4698)"
+    },
+    {
+      "sha": "7b92ab88",
+      "date": "2026-10-15",
+      "author": "Rishabh Sinha",
+      "msg": "[Store] Add a BatchProbe verb to the MasterScenario DSL (#4523)"
+    },
+    {
+      "sha": "c4e50cd0",
+      "date": "2026-10-15",
+      "author": "Guocheng(Eric) Song",
+      "msg": "fix(tent): isolate io_uring file caches per transport (#4648)"
+    },
+    {
+      "sha": "5c82be77",
+      "date": "2026-10-14",
+      "author": "losewayy",
+      "msg": "[Bugfix][TransferEngine] Pin BatchDesc across completion callbacks before freeBatchID (#4569)"
+    },
+    {
+      "sha": "4012f2a5",
+      "date": "2026-10-13",
+      "author": "Lex",
+      "msg": "[Bugfix][TENT] Reject short io_uring completions (#4618)"
+    },
+    {
+      "sha": "4549d559",
+      "date": "2026-10-14",
+      "author": "sunshine-sun",
+      "msg": "Reopen DFS shard once on POSIX I/O failure before surfacing error (#4512)"
+    },
+    {
+      "sha": "dae48283",
+      "date": "2026-10-14",
+      "author": "Yufeng He",
+      "msg": "[Bugfix][Store] Skip replicas on unloaded segments during standby restore (#4553)"
+    },
+    {
+      "sha": "bb6d1126",
+      "date": "2026-10-10",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Release the MRs that did register when a NIC refuses a buffer (#4515)"
+    },
+    {
+      "sha": "89faca87",
+      "date": "2026-10-09",
+      "author": "Stary",
+      "msg": "[TransferEngine] Skip in-flight task walk in getBatchTransferStatus for RDMA (#4199)"
+    },
+    {
+      "sha": "2ac40862",
+      "date": "2026-10-09",
+      "author": "2xdevv",
+      "msg": "[Store] Add opt-in DFS adapter batching for 3FS (#4498)"
+    },
+    {
+      "sha": "61ec5037",
+      "date": "2026-09-30",
+      "author": "waizuichougou",
+      "msg": "[Store] Refresh DFS bucket LRU on batch reads (#4385)"
+    },
+    {
+      "sha": "1cdadb2e",
+      "date": "2026-09-29",
+      "author": "Guocheng(Eric) Song",
+      "msg": "[Bugfix][TENT] Terminate full-length C notification strings (#4381)"
+    },
+    {
+      "sha": "7850b24b",
+      "date": "2026-09-29",
+      "author": "Vincent Gao",
+      "msg": "[Reshard] Add model-weight Transfer Engine adapters (#4293)"
+    },
+    {
+      "sha": "1fc27b62",
+      "date": "2026-09-28",
+      "author": "Liqian Lin",
+      "msg": "[Bugfix][TENT] Recover SHM backing paths during basic registration (#4318)"
+    },
+    {
+      "sha": "62e3c7d9",
+      "date": "2026-09-28",
+      "author": "void",
+      "msg": "fix(transfer-engine): reclaim timed-out batches safely (#3508)"
+    },
+    {
+      "sha": "4d6f25e3",
+      "date": "2026-09-24",
+      "author": "Zupeng Wang",
+      "msg": "[Store] Release offload tasks for unreported batch keys (#4232)"
+    },
+    {
+      "sha": "7d3a94e9",
+      "date": "2026-09-24",
+      "author": "Chizheng Fang",
+      "msg": "[Store] Rename DfsGlobalAllocator to ShardAllocator (#4281)"
+    },
+    {
+      "sha": "6fdcae24",
+      "date": "2026-09-23",
+      "author": "Vincent Gao",
+      "msg": "[Reshard] Add Transfer Engine execution and completion lifecycle (#3964)"
+    },
+    {
+      "sha": "56000152",
+      "date": "2026-09-23",
+      "author": "Liqian Lin",
+      "msg": "[Bugfix][TENT] Clear previous buffers when reading segment info (#4229)"
+    },
+    {
+      "sha": "1016469a",
+      "date": "2026-09-23",
+      "author": "Stary",
+      "msg": "[TransferEngine] Reuse batch-local transport and single-device RDMA preparation (#4279)"
+    },
+    {
+      "sha": "8edde52f",
+      "date": "2026-09-23",
+      "author": "Haoran FENG",
+      "msg": "[Bugfix][Store] Preserve tenant in BatchReplicaClear RPC (#4278)"
+    },
+    {
+      "sha": "fc070070",
+      "date": "2026-09-21",
+      "author": "Shu Ma",
+      "msg": "[Store] Parallelize OSS batches with independent request-scoped CURLM (#4105)"
+    },
+    {
+      "sha": "a816e5ca",
+      "date": "2026-09-21",
+      "author": "Haode Du",
+      "msg": "[Store] Add ProbeKey/BatchProbeKey RPCs for lease-free existence probes (#3801)"
+    },
+    {
+      "sha": "675ca5c6",
+      "date": "2026-09-20",
+      "author": "Stary",
+      "msg": "[TransferEngine] Cut WorkerPool submit locks with batched enqueue and rail count (#4189)"
+    },
+    {
+      "sha": "31dedebb",
+      "date": "2026-09-18",
+      "author": "Azuki Junjun",
+      "msg": "[TENT] Keep a retiring notify QP published until its completions are drained (#4062)"
+    },
+    {
+      "sha": "8aeecf7a",
+      "date": "2026-09-18",
+      "author": "Stary",
+      "msg": "[TransferEngine] Wait classic tebench batches with getBatchTransferStatus (#4193)"
+    },
+    {
+      "sha": "5e739763",
+      "date": "2026-09-17",
+      "author": "Icedcoco",
+      "msg": "[Store] Add batch snapshot and retention capacity metrics (#4173)"
+    },
+    {
+      "sha": "582b4b64",
+      "date": "2026-09-17",
+      "author": "Stary",
+      "msg": "[TransferEngine] Cache the last-hit MR and index the buffer list for selectDevice (#4132)"
+    },
+    {
+      "sha": "beca983c",
+      "date": "2026-09-17",
+      "author": "CangYue",
+      "msg": "[TENT] Fix first buffer address lookup in the compatibility API (#4138)"
+    },
+    {
+      "sha": "93b88e42",
+      "date": "2026-09-17",
+      "author": "Liqian Lin",
+      "msg": "[Bugfix][Store] Poll TENT batches with event completion enabled (#4143)"
+    },
+    {
+      "sha": "2191fcc4",
+      "date": "2026-09-17",
+      "author": "Icedcoco",
+      "msg": "[Store] Add snapshot-validated batch OpLog pruning (#4142)"
+    },
+    {
+      "sha": "53d41324",
+      "date": "2026-09-16",
+      "author": "Yufeng He",
+      "msg": "[Store] Make re-offload of persisted keys an idempotent skip in BatchOffload (#3135)"
+    },
+    {
+      "sha": "1d7a1890",
+      "date": "2026-09-15",
+      "author": "Icedcoco",
+      "msg": "[Store] Add bounded batch OpLog deletion primitive (#4112)"
+    },
+    {
+      "sha": "9fa8fdcf",
+      "date": "2026-09-15",
+      "author": "waizuichougou",
+      "msg": "perf(store): move batch write replica responses (#4102)"
+    },
+    {
+      "sha": "1553a3ba",
+      "date": "2026-09-14",
+      "author": "Liqian Lin",
+      "msg": "[TENT] Drain standard TCP workers during quiesce (#4005)"
+    },
+    {
+      "sha": "994296cb",
+      "date": "2026-09-11",
+      "author": "Liqian Lin",
+      "msg": "[TENT] Revoke registrations removed by failed batch rollback (#4002)"
+    },
+    {
+      "sha": "b92319da",
+      "date": "2026-09-11",
+      "author": "Yufeng He",
+      "msg": "[Store] Fan verified bytes out to duplicate keys in batch gets (#3929)"
+    },
+    {
+      "sha": "dc13728a",
+      "date": "2026-09-11",
+      "author": "liuke",
+      "msg": "[Bugfix][Store] Check read leases after grouped batch gets (#3996)"
+    },
+    {
+      "sha": "9cfb3381",
+      "date": "2026-09-10",
+      "author": "CangYue",
+      "msg": "[TE] Report buffered JSONL write failures in tebench (#3992)"
+    },
+    {
+      "sha": "430c6e74",
+      "date": "2026-09-10",
+      "author": "Zupeng Wang",
+      "msg": "[Store] Support online DFS shard capacity expansion (#3984)"
+    },
+    {
+      "sha": "6acb781e",
+      "date": "2026-09-10",
+      "author": "Huang Long",
+      "msg": "[Reshard] Add KV cache reshard planning (#3564)"
+    },
+    {
+      "sha": "d6da96ae",
+      "date": "2026-09-10",
+      "author": "Chao Lei",
+      "msg": "[Store] Release GIL during client setup (#3947)"
+    },
+    {
+      "sha": "f88d4c94",
+      "date": "2026-09-09",
+      "author": "Prajjwal Chittori",
+      "msg": "[Store] Sweep stale handles in bounded write-lock batches (#3593)"
+    },
+    {
+      "sha": "3ab1a108",
+      "date": "2026-09-09",
+      "author": "Icedcoco",
+      "msg": "[Store] Wire opt-in batch OpLog snapshots into standby runtime (#3950)"
+    },
+    {
+      "sha": "42d97861",
+      "date": "2026-09-09",
+      "author": "Jiangtian Feng",
+      "msg": "[Py] Fix batch_id leak on timeout and submit failure paths (#2350)"
+    },
+    {
+      "sha": "140e1f43",
+      "date": "2026-09-09",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Validate DummyClient registration of external pinned buffers (#3712)"
+    },
+    {
+      "sha": "3771d836",
+      "date": "2026-09-08",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Route tensor _from writes through multi-buffers (#3722)"
+    },
+    {
+      "sha": "95da554b",
+      "date": "2026-09-08",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Serialize lanes sharing a queue pair on its slice queue (#3924)"
+    },
+    {
+      "sha": "120714dc",
+      "date": "2026-09-07",
+      "author": "Stary",
+      "msg": "[TENT] Drain RDMA CQ and dest GPU before tearing down MRs (#3899)"
+    },
+    {
+      "sha": "9466cde9",
+      "date": "2026-09-07",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Support Dummy external buffer registration (#3721)"
+    },
+    {
+      "sha": "e9f91f77",
+      "date": "2026-09-06",
+      "author": "RongJie G",
+      "msg": "[TransferEngine] Clear pending notify when freeing batch (#3891)"
+    },
+    {
+      "sha": "cb9b380b",
+      "date": "2026-09-06",
+      "author": "Vincent Gao",
+      "msg": "[Reshard] Add Store-backed model-weight snapshots (#3772)"
+    },
+    {
+      "sha": "3c841395",
+      "date": "2026-09-03",
+      "author": "Icedcoco",
+      "msg": "[Store] Enable fenced batch OpLog writer (#3810)"
+    },
+    {
+      "sha": "65707bd3",
+      "date": "2026-09-03",
+      "author": "Icedcoco",
+      "msg": "[Store] Preserve replica IDs during standby restore (#3811)"
+    },
+    {
+      "sha": "04fd028c",
+      "date": "2026-09-02",
+      "author": "Feng Ren",
+      "msg": "[TransferEngine] Keep RDMA owner CQ polled during active handshake (#3814)"
+    },
+    {
+      "sha": "5c0cef2c",
+      "date": "2026-09-02",
+      "author": "Kevin_Xiong",
+      "msg": "[Store] Support 512MB hugepage size for client buffer allocation (#3789)"
+    },
+    {
+      "sha": "82a90a9e",
+      "date": "2026-09-01",
+      "author": "Icedcoco",
+      "msg": "[Store] Add batch OpLog snapshot coordinator (#3794)"
+    },
+    {
+      "sha": "88230cb0",
+      "date": "2026-08-31",
+      "author": "Stary",
+      "msg": "[CI] Stop run-e2e-ci from retriggering Build & Test (#3756)"
+    },
+    {
+      "sha": "0a3827b8",
+      "date": "2026-08-31",
+      "author": "CangYue",
+      "msg": "[TE] Shard TCP transport I/O across a pool of io_context threads (#3724)"
+    },
+    {
+      "sha": "9233e38b",
+      "date": "2026-08-28",
+      "author": "Icedcoco",
+      "msg": "[Store] Add batch OpLog snapshot bootstrap (#3642)"
+    },
+    {
+      "sha": "097600d8",
+      "date": "2026-08-28",
+      "author": "Vincent Gao",
+      "msg": "[Reshard] Bind logical transfer plans to runtime snapshots (#3634)"
+    },
+    {
+      "sha": "ea1494c2",
+      "date": "2026-08-28",
+      "author": "waizuichougou",
+      "msg": "[Bugfix][TENT] Guard deferred batch liveness check (#3725)"
+    },
+    {
+      "sha": "472b2b0a",
+      "date": "2026-08-27",
+      "author": "Icedcoco",
+      "msg": "fix(store): classify batch eviction oplog failures (#3422)"
+    },
+    {
+      "sha": "cfafbfb7",
+      "date": "2026-08-27",
+      "author": "Aoi",
+      "msg": "[TransferEngine] Bound RDMA batch MR registration (#3664)"
+    },
+    {
+      "sha": "5409ae4e",
+      "date": "2026-08-27",
+      "author": "Stary",
+      "msg": "[TransferEngine] Log batchTransferSync failure paths (#3676)"
+    },
+    {
+      "sha": "cd41d58e",
+      "date": "2026-08-25",
+      "author": "Stary",
+      "msg": "[TENT] Remove global lock serialization on per-batch hot paths (#3648)"
+    },
+    {
+      "sha": "4f9e6749",
+      "date": "2026-08-25",
+      "author": "Xun Sun",
+      "msg": "fix(ep,pg): prevent cudaErrorIllegalAddress during CUDA graph capture with TBO (#3609)"
+    },
+    {
+      "sha": "9bce0617",
+      "date": "2026-08-25",
+      "author": "Jiangtian Feng",
+      "msg": "[TENT] Bound the pending-batch drain wait in ProxyManager shutdown (#3526)"
+    },
+    {
+      "sha": "19d485ba",
+      "date": "2026-08-24",
+      "author": "Vincent Gao",
+      "msg": "ci(reshard): add module test gate (#3622)"
+    },
+    {
+      "sha": "18304ccb",
+      "date": "2026-08-24",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Keep lazyFreeBatch sweeping past a batch it cannot reclaim (#3514)"
+    },
+    {
+      "sha": "82e27993",
+      "date": "2026-08-24",
+      "author": "Ruiqing Feng",
+      "msg": "[Bugfix][TENT] Unpin remote stage buffers after late completion (#3494)"
+    },
+    {
+      "sha": "f5433782",
+      "date": "2026-08-21",
+      "author": "chuanzhisongshu",
+      "msg": "perf(store): batch io_uring bucket reads (#3488)"
+    },
+    {
+      "sha": "f4e1de1c",
+      "date": "2026-08-21",
+      "author": "chuanzhisongshu",
+      "msg": "fix(store): reject cross-shard standby duplicates (#3527)"
+    },
+    {
+      "sha": "a00d3170",
+      "date": "2026-08-21",
+      "author": "Icedcoco",
+      "msg": "[Store] Add chunked standby snapshot artifact writer (#3447)"
+    },
+    {
+      "sha": "777cc778",
+      "date": "2026-08-21",
+      "author": "Vincent",
+      "msg": "[Reshard] Add N-D logical weight transfer planner (#3441)"
+    },
+    {
+      "sha": "09678aad",
+      "date": "2026-08-18",
+      "author": "\u738b\u9e64\u7537",
+      "msg": "[TransferEngine] Split EFA transfers that straddle BufferDesc chunk boundaries (#3505)"
+    },
+    {
+      "sha": "ada270ed",
+      "date": "2026-08-18",
+      "author": "Icedcoco",
+      "msg": "store: fence batch oplog writers by producer view (#3384)"
+    },
+    {
+      "sha": "1a52c5c1",
+      "date": "2026-08-18",
+      "author": "Yejun Yun",
+      "msg": "[TransferEngine] Bind buffer device for EFA CUDA loopback (#3436)"
+    },
+    {
+      "sha": "dc549aec",
+      "date": "2026-08-15",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Pace the transfer poll loops and stop leaking their batches (#3407)"
+    },
+    {
+      "sha": "9849f225",
+      "date": "2026-08-14",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Lock ProxyManager's stage buffer map (#3410)"
+    },
+    {
+      "sha": "aa0ce4c7",
+      "date": "2026-08-14",
+      "author": "zhtshr",
+      "msg": "[TE] Add RDMA ctrl frame codec and sender credit ledger (#3324)"
+    },
+    {
+      "sha": "0af9ed7e",
+      "date": "2026-08-13",
+      "author": "Vincent",
+      "msg": "[Reshard] Add resource and model-weight manifest contracts (#3187)"
+    },
+    {
+      "sha": "98547274",
+      "date": "2026-08-11",
+      "author": "Ola",
+      "msg": "[Bugfix] use BufferPool for zcopy benchmark (#3342)"
+    },
+    {
+      "sha": "38924b22",
+      "date": "2026-08-11",
+      "author": "Icedcoco",
+      "msg": "[Store] Add batch OpLog snapshot metadata protocol (#3178)"
+    },
+    {
+      "sha": "64495bdf",
+      "date": "2026-08-10",
+      "author": "Kamil",
+      "msg": "[Store] Allow configuring master admin/metrics HTTP bind address (#3318)"
+    },
+    {
+      "sha": "78726c5c",
+      "date": "2026-08-10",
+      "author": "Xiao You",
+      "msg": "[Store] Add put/get session APIs for ranged multi-buffer transfers (#2881)"
+    },
+    {
+      "sha": "aeeab073",
+      "date": "2026-08-06",
+      "author": "SongOf",
+      "msg": "[Bugfix][TENT] Keep context_set_ and buffer keys NicID-indexed (#3264)"
+    },
+    {
+      "sha": "54ce3b16",
+      "date": "2026-08-05",
+      "author": "Yufeng He",
+      "msg": "test: poll for the async eviction in PutStartExpiringTest (#3266)"
+    },
+    {
+      "sha": "98e17a2d",
+      "date": "2026-08-05",
+      "author": "Cruz Zhao",
+      "msg": "Add scatter transfer batching to transfer engine (#3000)"
+    },
+    {
+      "sha": "919c9893",
+      "date": "2026-08-04",
+      "author": "Ruiqing Feng",
+      "msg": "[Bugfix][TE] Fix dma-buf offsets for chunked GPU MRs (#3243)"
+    },
+    {
+      "sha": "129a9db9",
+      "date": "2026-08-03",
+      "author": "Posedge_Lin",
+      "msg": "[Store] Selectively materialize BatchEvict candidates after timestamp filtering (#3118)"
+    },
+    {
+      "sha": "a16e042b",
+      "date": "2026-08-03",
+      "author": "lujh",
+      "msg": "[Store] Fix silent data corruption in io_uring read path (#3066) (#3073)"
+    },
+    {
+      "sha": "a4e67597",
+      "date": "2026-08-02",
+      "author": "Prajjwal Chittori",
+      "msg": "[Bug]: [SSD] DSV4 enable SSD offload\uff0cstress testing, repeat offloading the same batch key, lead to OBJECT_ALREADY_EXISTS/persist failed/INVALID_KEY (#"
+    },
+    {
+      "sha": "a5a7f24b",
+      "date": "2026-08-03",
+      "author": "Aoi",
+      "msg": "[Store] Consolidate string parsing primitives (#3179)"
+    },
+    {
+      "sha": "4634eadb",
+      "date": "2026-08-03",
+      "author": "\u738b\u9e64\u7537",
+      "msg": "[TE] perf(efa): allow bounding the batch MR registration fan-out (#3210)"
+    },
+    {
+      "sha": "66f1930b",
+      "date": "2026-07-31",
+      "author": "\u65e9\u4e9b\u5e74",
+      "msg": "feat(rdma): enable PCI relaxed ordering by default (#3205)"
+    },
+    {
+      "sha": "a7413723",
+      "date": "2026-07-30",
+      "author": "\u738b\u9e64\u7537",
+      "msg": "[TE] fix(efa): bind a CUDA context before registering GPU memory (#3177)"
+    },
+    {
+      "sha": "7a938fb3",
+      "date": "2026-07-27",
+      "author": "Zhang, Jiejing",
+      "msg": "fix(rdma): auto-chunk MRs larger than device max_mr_size (#2017) (#2644)"
+    },
+    {
+      "sha": "ff217b8c",
+      "date": "2026-07-27",
+      "author": "Icedcoco",
+      "msg": "[Store] implement RFC #2756 batch-record HA OpLog writer (#2826)"
+    },
+    {
+      "sha": "2e46e329",
+      "date": "2026-07-27",
+      "author": "Jiangtian Feng",
+      "msg": "[TENT] Fix req_map_ leak for single-task batches in ascend transport (#3116)"
+    },
+    {
+      "sha": "077e250b",
+      "date": "2026-07-25",
+      "author": "Jiangtian Feng",
+      "msg": "[TENT] Fix io_uring stale status in getTransferStatus (#2379)"
+    },
+    {
+      "sha": "ed603631",
+      "date": "2026-07-24",
+      "author": "Yufeng He",
+      "msg": "[wheel] restore zero-copy puts for multi-buffer payloads (#3054)"
+    },
+    {
+      "sha": "4dbe5a4c",
+      "date": "2026-07-22",
+      "author": "Cruz Zhao",
+      "msg": "[wheel] add multi-buffer structured object puts (#3024)"
+    },
+    {
+      "sha": "d84d30ab",
+      "date": "2026-07-17",
+      "author": "xiangui",
+      "msg": "[Store] Clean up and document snapshot refactoring (5/5) (#2943)"
+    },
+    {
+      "sha": "70b59126",
+      "date": "2026-07-16",
+      "author": "Guocheng(Eric) Song",
+      "msg": "[TransferEngine] Propagate batch memory operation errors (#2869)"
+    },
+    {
+      "sha": "bb1b71ff",
+      "date": "2026-07-16",
+      "author": "Cruz Zhao",
+      "msg": "store: fix SPDK client buffer teardown (#2936)"
+    },
+    {
+      "sha": "402673e4",
+      "date": "2026-07-15",
+      "author": "Yiheng Tong",
+      "msg": "[TENT] Fix mismatched cuFileBatchIOGetStatus semantics in gds transport (#2921)"
+    },
+    {
+      "sha": "3a38cb8c",
+      "date": "2026-07-15",
+      "author": "Yanshu WANG",
+      "msg": "[TENT] Add receiver-credit ledger model and protocol invariants"
+    },
+    {
+      "sha": "3bbd9b2c",
+      "date": "2026-07-15",
+      "author": "Posedge_Lin",
+      "msg": "[Store] Make batch_evict_bench scale and eviction ratios configurable (#2855)"
+    },
+    {
+      "sha": "6e3a11b9",
+      "date": "2026-07-15",
+      "author": "morluto",
+      "msg": "[TE] Reject unsupported NVMe-oF task batches and correlate cuFile completions (#2893)"
+    },
+    {
+      "sha": "5ade6dda",
+      "date": "2026-07-15",
+      "author": "Feng Ren",
+      "msg": "[TE] Use std::atomic to support ARM64 relaxed ordering (#2897)"
+    },
+    {
+      "sha": "fc0623b9",
+      "date": "2026-07-14",
+      "author": "morluto",
+      "msg": "[TE] Reject empty RDMA completion resources during context setup (#2892)"
+    },
+    {
+      "sha": "721ec57b",
+      "date": "2026-07-12",
+      "author": "Guocheng(Eric) Song",
+      "msg": "[TransferEngine] Validate batch memory registrations (#2854)"
+    },
+    {
+      "sha": "df84a553",
+      "date": "2026-07-08",
+      "author": "lujh",
+      "msg": "[wip] docs: add vLLM V1 MooncakeStore KV cache sharing benchmark (#2773)"
+    },
+    {
+      "sha": "2e21a45e",
+      "date": "2026-07-07",
+      "author": "tancz",
+      "msg": "[Store] Support local_buffer_size in mooncake_client (#2740) (#2739)"
+    },
+    {
+      "sha": "7c03cc9a",
+      "date": "2026-07-07",
+      "author": "Posedge_Lin",
+      "msg": "[Store] Add BatchEvict candidate-selection benchmark (#2584)"
+    },
+    {
+      "sha": "29b22aa6",
+      "date": "2026-07-06",
+      "author": "LZW",
+      "msg": "[Store] feat: allow configuring client tenant id (#2755)"
+    },
+    {
+      "sha": "3adc3aae",
+      "date": "2026-07-06",
+      "author": "Aoi",
+      "msg": "[Store] Refactor store buffer headers and slice splitting (#2732)"
+    },
+    {
+      "sha": "bb1b0843",
+      "date": "2026-07-05",
+      "author": "mikegguo",
+      "msg": "[Store] Enable hugepage mmap in allocate_buffer_numa_segments (#2417)"
+    },
+    {
+      "sha": "8567ab02",
+      "date": "2026-07-04",
+      "author": "smartssw",
+      "msg": "[Store] Make batch_query_keys read-only and return all replica types (#2685)"
+    },
+    {
+      "sha": "b5ad133e",
+      "date": "2026-07-03",
+      "author": "Cruz Zhao",
+      "msg": "fix(store): chunk oversized io_uring vector I/O (#2719)"
+    },
+    {
+      "sha": "98ca2594",
+      "date": "2026-06-27",
+      "author": "huangx",
+      "msg": "[Bugfix] Set Ascend context in batch get worker (#2557)"
+    },
+    {
+      "sha": "110bc7de",
+      "date": "2026-06-26",
+      "author": "Guocheng(Eric) Song",
+      "msg": "[Store] Stop snapshot thread promptly during shutdown (#2533)"
+    },
+    {
+      "sha": "3c4fbea8",
+      "date": "2026-06-26",
+      "author": "Yufeng He",
+      "msg": "[Bugfix] Parse string booleans for enable_ssd_offload in from_file (#2506)"
+    },
+    {
+      "sha": "a4de8b2b",
+      "date": "2026-06-26",
+      "author": "Cruz Zhao",
+      "msg": "[Store] add remote tensor batch interfaces (#2050)"
+    },
+    {
+      "sha": "be1ceba6",
+      "date": "2026-06-24",
+      "author": "Colors-111",
+      "msg": "[Store]: Fix BatchEvict Over-Eviction Due to Inflated Target When SSD Offload Is Enabled (#2286)"
+    },
+    {
+      "sha": "3a893040",
+      "date": "2026-06-23",
+      "author": "Yufeng He",
+      "msg": "[Store] fix integer overflow in BatchOffload for objects larger than 4 GiB (#2570)"
+    },
+    {
+      "sha": "208d105e",
+      "date": "2026-06-23",
+      "author": "Lewis",
+      "msg": "Update BatchAsync for MMNVL (#2384)"
+    },
+    {
+      "sha": "3c3b01b1",
+      "date": "2026-06-18",
+      "author": "Schatten",
+      "msg": "[Store] Group BatchGetReplicaList metadata lookup by shard (#2508)"
+    },
+    {
+      "sha": "4969cfc0",
+      "date": "2026-06-17",
+      "author": "Guocheng(Eric) Song",
+      "msg": "[Integration] Fix double-free in buffer_to_tensor error path (#2493)"
+    },
+    {
+      "sha": "bb7b9065",
+      "date": "2026-06-12",
+      "author": "Yufeng He",
+      "msg": "fix: clean up failed io_uring sub-batch init (#2403)"
+    },
+    {
+      "sha": "2e1dc5ad",
+      "date": "2026-06-11",
+      "author": "Jiangtian Feng",
+      "msg": "[TE] Fix NVMeoF loop variable bug and NVMeoFBatchDesc leak (#2373)"
+    },
+    {
+      "sha": "8dbb0e1d",
+      "date": "2026-06-10",
+      "author": "Yufeng He",
+      "msg": "fix: reject failed buddy allocator backing buffer (#2402)"
+    },
+    {
+      "sha": "d00afc7f",
+      "date": "2026-06-10",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Introduce cached batch query result (#1834)"
+    },
+    {
+      "sha": "0cd30bc6",
+      "date": "2026-06-09",
+      "author": "Cruz Zhao",
+      "msg": "[Store] Introduce buffer pool for zero copy interfaces (#2095)"
+    },
+    {
+      "sha": "4c6a5367",
+      "date": "2026-06-03",
+      "author": "Feng Ren",
+      "msg": "[TE] Fix TCP connection pool SIGSEGV by deferring cleanup with asio::post (#2174)"
+    },
+    {
+      "sha": "4794ed5a",
+      "date": "2026-05-27",
+      "author": "lujh",
+      "msg": "[Store] remove invalid kMaxSliceSize assertion in AllocateBatch (#2165)"
+    },
+    {
+      "sha": "f225d8ac",
+      "date": "2026-05-26",
+      "author": "LZW",
+      "msg": "[Integration] fix batch tensor allocation error code (#2226)"
+    },
+    {
+      "sha": "4a17b1d4",
+      "date": "2026-05-25",
+      "author": "LZW",
+      "msg": "[Store] Fix: validate HA backend availability during config parsing (#2111)"
+    },
+    {
+      "sha": "53480ac1",
+      "date": "2026-05-16",
+      "author": "Stary",
+      "msg": "[TENT] Fix batch getTransferStatus premature FAILED aggregation  (#2055)"
+    },
+    {
+      "sha": "93f49168",
+      "date": "2026-05-11",
+      "author": "jinke",
+      "msg": "[TENT] fallback to per-task cudaMemcpyAsync when driver lacks batch s\u2026 (#2072)"
+    },
+    {
+      "sha": "fed78a71",
+      "date": "2026-05-09",
+      "author": "Jason",
+      "msg": "[Store] fix(rust): add missing empty check for batch_is_exist (#2045)"
+    },
+    {
+      "sha": "a422a0ca",
+      "date": "2026-05-08",
+      "author": "Colors-111",
+      "msg": "[Store]Fix SSD offload in Metadata Server mode: sync ClientBuffer to metadata server (#1939)"
+    },
+    {
+      "sha": "5b143619",
+      "date": "2026-05-07",
+      "author": "Jason",
+      "msg": "fix(transfer-engine): add missing empty checks for batch methods (#2046)"
+    },
+    {
+      "sha": "3ac7de25",
+      "date": "2026-05-03",
+      "author": "Venkat Raman",
+      "msg": "[Store] Add lock-free MmapArena allocator for buffer mmap path (#1820)"
+    },
+    {
+      "sha": "090e938c",
+      "date": "2026-05-03",
+      "author": "Dayuxiaoshui",
+      "msg": "[Store][Rust] Add batch_put_from, batch_get_into, batch_is_exist wrappers (#1993)"
+    },
+    {
+      "sha": "f2853a80",
+      "date": "2026-04-30",
+      "author": "ZhangCheng",
+      "msg": "[TE] To avoid inconvenience during debugging, remove redundant checks. (#2020)"
+    },
+    {
+      "sha": "32329c83",
+      "date": "2026-04-20",
+      "author": "shuoerw",
+      "msg": "[TENT] Batch transfer requests using cudaMemcpyBatchAsync (#1890)"
+    },
+    {
+      "sha": "28464f3a",
+      "date": "2026-04-17",
+      "author": "Geonwoo Choi",
+      "msg": "[Store] Expose batch_replica_clear in Python binding (#1848)"
+    },
+    {
+      "sha": "37df986f",
+      "date": "2026-04-13",
+      "author": "ertcmm",
+      "msg": "[Store] fix: prevent redundant replica pinning during offloading (#1853)"
+    },
+    {
+      "sha": "9d35047f",
+      "date": "2026-04-10",
+      "author": "fatSheep",
+      "msg": "[CI] Harden CI pipeline: path filtering, concurrency, on-demand E2E, and security fixes (#1846)"
+    },
+    {
+      "sha": "7e09bd1e",
+      "date": "2026-04-09",
+      "author": "shuoerw",
+      "msg": "[TE][TENT]:Fix an issue in mnnvl_transport.cpp where BufferDesc and handle used in cuMemMap doesn't match. (#1837)"
+    },
+    {
+      "sha": "18c59612",
+      "date": "2026-04-03",
+      "author": "ZhangCheng",
+      "msg": "[TENT] Disconnect before registering memory (#1807)"
+    },
+    {
+      "sha": "81100d93",
+      "date": "2026-04-02",
+      "author": "usernamehaha2022",
+      "msg": "[Transfer Engine] Round-robin slice batch across QPs in RdmaEndPoint::submitPostSend (#1721)"
+    },
+    {
+      "sha": "6105f9cd",
+      "date": "2026-03-31",
+      "author": "lujh",
+      "msg": "[Store] fix gmock bug and add batch remove API (#1756)"
+    },
+    {
+      "sha": "cf835bed",
+      "date": "2026-03-30",
+      "author": "ZhangCheng",
+      "msg": "[tent] Remove sync parameter and buffer pool config, unify into TransferAsync in AscendDirectTransport (#1758)"
+    },
+    {
+      "sha": "41d40dab",
+      "date": "2026-03-30",
+      "author": "Houjiang Chen",
+      "msg": "fix get start_timestamp but batch_desc has already freed (#1760)"
+    },
+    {
+      "sha": "d004bc0a",
+      "date": "2026-03-20",
+      "author": "zhangzuo21",
+      "msg": "[Store] Add eviction policy for BucketStorageBackend with batch master notification (#1646)"
+    },
+    {
+      "sha": "ad1bdcf7",
+      "date": "2026-03-20",
+      "author": "Xuanlin_Mi",
+      "msg": "Fix/tent batch transfer merge boundary (#1704)"
+    },
+    {
+      "sha": "e7f6bad7",
+      "date": "2026-03-12",
+      "author": "zhangzuo21",
+      "msg": "[Store]Optimize uring file support for SSD offloading (#1562)"
+    },
+    {
+      "sha": "93493562",
+      "date": "2026-03-10",
+      "author": "Xun Sun",
+      "msg": "Update mooncake-ep/src/mooncake_ep_buffer.cpp"
+    },
+    {
+      "sha": "33cb4efa",
+      "date": "2026-03-04",
+      "author": "zhangzuo21",
+      "msg": "[Bug fix] fix compile err without use uring (#1602)"
+    },
+    {
+      "sha": "2a9e64dd",
+      "date": "2026-03-02",
+      "author": "fatSheep",
+      "msg": "[TENT] Fix resource cleanup order to prevent SubBatch/Slice leak (#1585)"
+    },
+    {
+      "sha": "ba8fd098",
+      "date": "2026-02-28",
+      "author": "Stary",
+      "msg": "[Bugfix] Fix RDMA notification send buffer DMA race and reconnect hang (#1567)"
+    },
+    {
+      "sha": "8ed67617",
+      "date": "2026-02-25",
+      "author": "EkiRui",
+      "msg": "[Store] Enable dummy client zero-copy get_buffer via shared hot cache (#1535)"
+    },
+    {
+      "sha": "4ff4dc1e",
+      "date": "2026-02-25",
+      "author": "zhangzuo21",
+      "msg": "[Store] Implement a file interface based on io uring to optimize storage backend. (#1500)"
+    },
+    {
+      "sha": "589684e9",
+      "date": "2026-02-02",
+      "author": "ascend-direct-dev",
+      "msg": "change buffer mode default thread pool size (#1464)"
+    },
+    {
+      "sha": "2937342e",
+      "date": "2026-01-25",
+      "author": "ZiWei Yuan",
+      "msg": "fix(ep_buffer): rm the fixed id 3 for rdma device (#1432)"
+    },
+    {
+      "sha": "2a37b915",
+      "date": "2026-01-22",
+      "author": "Houjiang Chen",
+      "msg": "[Store] unregister client local buffer when tear down (#1413)"
+    },
+    {
+      "sha": "1e32df70",
+      "date": "2026-01-22",
+      "author": "Biao Sun",
+      "msg": "[Store] Support batch query keys api for master service http server (#1417)"
+    },
+    {
+      "sha": "7c6508a1",
+      "date": "2026-01-22",
+      "author": "Bruce-x-1997",
+      "msg": "[performance] decrease regmr overhead in ep_buffer/gda path (#1414)"
+    },
+    {
+      "sha": "b064a662",
+      "date": "2026-01-21",
+      "author": "Ruoyu Qin",
+      "msg": "[Wheel] Remove the default buffer pre-allocation in initialize() (#1415)"
+    },
+    {
+      "sha": "65019f94",
+      "date": "2026-01-20",
+      "author": "Cruz Zhao",
+      "msg": "[Build] Retrieve the actual glibc version during the build process (#1402)"
+    },
+    {
+      "sha": "e43dce6f",
+      "date": "2026-01-19",
+      "author": "ympcMark",
+      "msg": "Mooncake PG buffer refactor (#1401)"
+    },
+    {
+      "sha": "914ed1d4",
+      "date": "2026-01-18",
+      "author": "Ruoyu Qin",
+      "msg": "[DOC] Add batch API docs and examples for transfer engine (#1395)"
+    },
+    {
+      "sha": "e5c844f6",
+      "date": "2026-01-14",
+      "author": "Yixin Zhang",
+      "msg": "[TE] coro_rpc_communicator python bindings (#1106)"
+    },
+    {
+      "sha": "4e3c1555",
+      "date": "2026-01-12",
+      "author": "Jinlong Chen",
+      "msg": "[Store]: Use SharedMutex in MetadataShard for better performance (#1343)"
+    },
+    {
+      "sha": "45917282",
+      "date": "2026-01-07",
+      "author": "Mahesh Bapatu",
+      "msg": "[Store] - Implement partial success handling in BatchOffload (#1319)"
+    },
+    {
+      "sha": "0b149e6c",
+      "date": "2025-12-29",
+      "author": "Cruz Zhao",
+      "msg": "[store] support batch pub and tp aware for pub_tensor (#1288)"
+    },
+    {
+      "sha": "ed2fa9dd",
+      "date": "2025-12-26",
+      "author": "Xun Sun",
+      "msg": "[CI] Try to reduce disk usage during release build (#1287)"
+    },
+    {
+      "sha": "fdfd7481",
+      "date": "2025-12-25",
+      "author": "Cruz Zhao",
+      "msg": "[store] Prefer local segment when get_buffer/get_into (#1258)"
+    },
+    {
+      "sha": "1a5983e7",
+      "date": "2025-12-19",
+      "author": "Cruz Zhao",
+      "msg": "[store] zero copy for get_tensor() and batch_get_tensor() (#1192)"
+    },
+    {
+      "sha": "c553b190",
+      "date": "2025-12-17",
+      "author": "Feng Ren",
+      "msg": "[TE] Memorize batched transfer status (#1205)"
+    },
+    {
+      "sha": "024b695a",
+      "date": "2025-12-12",
+      "author": "Vincent-Bo-ali",
+      "msg": "[Store] feat: Add BatchReplicaClear API for manual cache cleanup (#1191)"
+    },
+    {
+      "sha": "72bfa28c",
+      "date": "2025-12-08",
+      "author": "Vincent-Bo-ali",
+      "msg": "[Store] feat: Add BatchQueryIp API for querying multiple client IPs (#1162)"
+    },
+    {
+      "sha": "3a6cd290",
+      "date": "2025-11-13",
+      "author": "Xuchun Shang",
+      "msg": "[Store] add batch tensor (#1044)"
+    },
+    {
+      "sha": "1a4c0151",
+      "date": "2025-11-04",
+      "author": "Xun Sun",
+      "msg": "[Misc] Lazy import `ep` in `mooncake_ep_buffer.py` (#1014)"
+    },
+    {
+      "sha": "723474f7",
+      "date": "2025-10-25",
+      "author": "ascend-direct-dev",
+      "msg": "adxl: fix aclrtMemcpyBatch max 4096 limit bug (#963)"
+    },
+    {
+      "sha": "bf646fc3",
+      "date": "2025-10-23",
+      "author": "Xun Sun",
+      "msg": "[Misc] For Mooncake Backend, skip transferring to non-active ranks (#953)"
+    },
+    {
+      "sha": "6027426b",
+      "date": "2025-10-20",
+      "author": "ascend-direct-dev",
+      "msg": "add remove buffer pool (#941)"
+    },
+    {
+      "sha": "2d3d02a0",
+      "date": "2025-10-16",
+      "author": "Chao Lei",
+      "msg": "[Store] Add APIs: batch_put_from_multi_buffers and batch_get_into_multi_buffers (#929)"
+    },
+    {
+      "sha": "738747c4",
+      "date": "2025-10-14",
+      "author": "Teng Ma",
+      "msg": "[Store] Change log level for batch operation (#916)"
+    },
+    {
+      "sha": "ca09e509",
+      "date": "2025-10-14",
+      "author": "JinYan Su",
+      "msg": "fix(store): Fix integer overflow in get_into/batch_get_into for values > 4GB (#920)"
+    },
+    {
+      "sha": "3cdb272c",
+      "date": "2025-10-11",
+      "author": "ympcMark",
+      "msg": "[Misc] For EP, use chunked transfer to handle larger tensors"
+    },
+    {
+      "sha": "4040e1b2",
+      "date": "2025-10-08",
+      "author": "Xun Sun",
+      "msg": "[Misc] For EP, pass device_name instead of nic_id when creating `ep.Buffer` (#910)"
+    },
+    {
+      "sha": "42918fba",
+      "date": "2025-09-28",
+      "author": "Jinlong Chen",
+      "msg": "fix(store): Get start_time before calling RPC in BatchQuery (#896)"
+    },
+    {
+      "sha": "4976c2be",
+      "date": "2025-09-25",
+      "author": "JinYan Su",
+      "msg": "refactor(store): Remove BufStatus and segment_name for AllocatedBuffer (#883)"
+    },
+    {
+      "sha": "06cc2175",
+      "date": "2025-09-10",
+      "author": "Xuchun Shang",
+      "msg": "[Store] skip null buffer (#812)"
+    },
+    {
+      "sha": "1c7246c5",
+      "date": "2025-09-05",
+      "author": "Haifeng Chen",
+      "msg": "Remove unnecessary register buffer from put_tensor (#803)"
+    },
+    {
+      "sha": "6fbb85b3",
+      "date": "2025-08-28",
+      "author": "JinYan Su",
+      "msg": "feat(store): Add largest free region filtering for allocation (#785)"
+    },
+    {
+      "sha": "75bcd920",
+      "date": "2025-08-14",
+      "author": "ykwd",
+      "msg": "[Doc] Minor Update: Explain Return Value of batch_put_from (#747)"
+    },
+    {
+      "sha": "bdc7ffb8",
+      "date": "2025-08-13",
+      "author": "Szymon O\u017c\u00f3g",
+      "msg": "[TE] fix: deleting buffer that doesn't belong to us (#739)"
+    },
+    {
+      "sha": "2eadcef5",
+      "date": "2025-08-06",
+      "author": "Feng Ren",
+      "msg": "Reimplement VRAM buffering in TCP transport (#702)"
+    },
+    {
+      "sha": "f58d18c2",
+      "date": "2025-08-01",
+      "author": "JinYan Su",
+      "msg": " refactor(store): move client buffer implementation to store module (#700)"
+    },
+    {
+      "sha": "1980ca64",
+      "date": "2025-07-25",
+      "author": "JinYan Su",
+      "msg": "feat(store): add batch get buffer support (#671)"
+    },
+    {
+      "sha": "7e1ef1ad",
+      "date": "2025-07-18",
+      "author": "AscendTransport",
+      "msg": "[TransferEngine] Ascend Transport: add batch_transfer_sync, Debian support & bug fixes (#619)"
+    },
+    {
+      "sha": "20f0ff9b",
+      "date": "2025-07-18",
+      "author": "WWQ",
+      "msg": "[Store] fix(store_py): prevent SIGSEGV when SliceBuffer is destroyed after store.close (#639)"
+    },
+    {
+      "sha": "f49c6c39",
+      "date": "2025-07-11",
+      "author": "xinranwang17",
+      "msg": "[Store] fix: correctly cleanup local buffer allocation (#590)"
+    },
+    {
+      "sha": "329754c5",
+      "date": "2025-07-09",
+      "author": "JinYan Su",
+      "msg": "test(client): add batch put test for duplicate keys (#588)"
+    },
+    {
+      "sha": "6515b50d",
+      "date": "2025-07-07",
+      "author": "Sgt.Pepper",
+      "msg": "[Store] Add ungister_buffer python binding for Mooncake Store (#596)"
+    },
+    {
+      "sha": "f0cb2282",
+      "date": "2025-07-07",
+      "author": "SCDESPERTATE",
+      "msg": "add support for asynchronous batch transfer to accelerate transfer operation (#564)"
+    },
+    {
+      "sha": "2c148b28",
+      "date": "2025-07-01",
+      "author": "SCDESPERTATE",
+      "msg": "Optimize slice handling to accelerate the large batch transfer operation (#557)"
+    },
+    {
+      "sha": "3cccec84",
+      "date": "2025-06-30",
+      "author": "JinYan Su",
+      "msg": "feat(store): add zero copy batch put and get for python binding (#551)"
+    },
+    {
+      "sha": "6baaeaec",
+      "date": "2025-06-30",
+      "author": "xinranwang17",
+      "msg": "[Store] feat: support batch put/get api in python module (#556)"
+    },
+    {
+      "sha": "5ec47dd8",
+      "date": "2025-06-27",
+      "author": "Teng Ma",
+      "msg": "[Integration] feat: expose batch reg API (#558)"
+    },
+    {
+      "sha": "b91c60c5",
+      "date": "2025-06-24",
+      "author": "JinYan Su",
+      "msg": "feat(store): add batch exist support for master (#542)"
+    },
+    {
+      "sha": "01df3668",
+      "date": "2025-06-20",
+      "author": "Francis",
+      "msg": "add support for batch transfer to accelerate transfer operation (#499)"
+    },
+    {
+      "sha": "1a53701e",
+      "date": "2025-06-12",
+      "author": "JinYan Su",
+      "msg": "feat(client): Abstract client-side data transmission for async and batch optimization (#455)"
+    },
+    {
+      "sha": "4d0c85da",
+      "date": "2025-06-05",
+      "author": "xinranwang17",
+      "msg": "[MooncakeStore] support batch api (#428)"
+    },
+    {
+      "sha": "02504e14",
+      "date": "2025-05-31",
+      "author": "maobaolong",
+      "msg": "[Store] Improve the batchEvict logic (#432)"
+    },
+    {
+      "sha": "7b3c5c97",
+      "date": "2025-05-22",
+      "author": "niqi-lyu",
+      "msg": "[FIX] fix bug in async apis in python, the batch_id's dtype is int64_t, not int (#387)"
+    },
+    {
+      "sha": "dfe776a4",
+      "date": "2025-05-15",
+      "author": "ykwd",
+      "msg": "[BugFix] In buffer allocation, multiple randomly trying strategy doesn't work as expected. (#365)"
+    },
+    {
+      "sha": "b018441a",
+      "date": "2025-05-14",
+      "author": "Xuchun Shang",
+      "msg": "[Transfer Engine] Check the buffer size before register (#364)"
+    },
+    {
+      "sha": "0fc59ac2",
+      "date": "2025-05-01",
+      "author": "\u795d\u5065\u806a",
+      "msg": "[Bugfix] Fixed potential issues that may occur during the CMake build process (#319)"
+    },
+    {
+      "sha": "d394071a",
+      "date": "2025-04-27",
+      "author": "JinYan Su",
+      "msg": "refactor(store): simplify memory management with contiguous buffers (#310)"
+    },
+    {
+      "sha": "427758d1",
+      "date": "2025-04-12",
+      "author": "Francis",
+      "msg": "[Bugfix]: fix redis access error during multi-threaded runtime. (#235)"
+    },
+    {
+      "sha": "f0a22998",
+      "date": "2025-03-23",
+      "author": "JinYan Su",
+      "msg": "[FEATURE] catch exceptions during allocator creation (#157)"
+    },
+    {
+      "sha": "6f7cc57e",
+      "date": "2025-03-20",
+      "author": "JinYan Su",
+      "msg": "[Optimize] Update EndpointStore interface to use const references for string parameters (#152)"
+    },
+    {
+      "sha": "bedd1c3c",
+      "date": "2025-01-09",
+      "author": "\u98ce\u53bb\u5e7d\u58a8",
+      "msg": "[TransferEngine] adjust transfer_engine_bench: 1.Introduce the gflag buffer_size for enhanced configurability. 2. Utilize uint64_t for block_size to p"
+    },
+    {
+      "sha": "62bc31ca",
+      "date": "2024-12-06",
+      "author": "wxsm",
+      "msg": "[Bugfix] cpp std::string (#18)"
+    }
+  ],
+  "pg_framework": [
+    {
+      "sha": "ba6d44d9",
+      "date": "2026-10-14",
+      "author": "Lancer",
+      "msg": "[EP][Bugfix] Validate Legacy Buffer Constructor Arguments (#4537)"
+    },
+    {
+      "sha": "1c54e233",
+      "date": "2026-10-14",
+      "author": "Xun Sun",
+      "msg": "[PG] Use JIT for PG torch adapter (#3673)"
+    },
+    {
+      "sha": "a0ccd7f2",
+      "date": "2026-10-12",
+      "author": "R0CKSTAR",
+      "msg": "[EP] Fix MUSA build: add missing using-declaration for mc_fence_noflush (#4579)"
+    },
+    {
+      "sha": "abef7875",
+      "date": "2026-10-10",
+      "author": "Xun Sun",
+      "msg": "[EP] Optimize MUSA legacy EP dispatch and combine (#4125)"
+    },
+    {
+      "sha": "6d1960eb",
+      "date": "2026-10-10",
+      "author": "Yufeng He",
+      "msg": "[PG][Bugfix] Keep startup skew out of the queued-send progress window (#4552)"
+    },
+    {
+      "sha": "a88bd082",
+      "date": "2026-09-09",
+      "author": "Akhil Langer",
+      "msg": "[EP] Support NCCL ElasticBuffer recovery after rank replacement (#3963)"
+    },
+    {
+      "sha": "d7f99ed0",
+      "date": "2026-09-07",
+      "author": "Akhil Langer",
+      "msg": "[EP] Add NCCL Device API backend for ElasticBuffer (#3449)"
+    },
+    {
+      "sha": "886feb8b",
+      "date": "2026-09-03",
+      "author": "Xun Sun",
+      "msg": "[PG] Add support for torch==2.14.0 (#3842)"
+    },
+    {
+      "sha": "69d41d5e",
+      "date": "2026-09-03",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Fix CUDA enqueue-stream serialization (#3798)"
+    },
+    {
+      "sha": "a11f54e5",
+      "date": "2026-08-28",
+      "author": "\u5321\u80e4\u946b",
+      "msg": "[TransferEngine][EP] Support Kimi K3 & guard against duplicate glog initialization (#3727)"
+    },
+    {
+      "sha": "ed0a77a8",
+      "date": "2026-08-28",
+      "author": "Xun Sun",
+      "msg": "[EP] fix: retain tensors for deferred receive hooks (#3732)"
+    },
+    {
+      "sha": "6a00c353",
+      "date": "2026-08-27",
+      "author": "Aoi",
+      "msg": "[EP] Migrate Python layer to unified package (#3635)"
+    },
+    {
+      "sha": "cafc5078",
+      "date": "2026-08-26",
+      "author": "waizuichougou",
+      "msg": "[Bugfix][PG] Balance CUDA graph capture depth accounting (#3701)"
+    },
+    {
+      "sha": "bdb04026",
+      "date": "2026-08-13",
+      "author": "Xun Sun",
+      "msg": "[EP] Fix incorrect target name under condition EP_USE_IDE (#3418)"
+    },
+    {
+      "sha": "90c5ce09",
+      "date": "2026-08-13",
+      "author": "Xun Sun",
+      "msg": "[EP] decouple native EP from torch C++ APIs (#2883)"
+    },
+    {
+      "sha": "74e64745",
+      "date": "2026-08-06",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Build the device worker with C++17 for CMake 3.22 compatibility (#3308)"
+    },
+    {
+      "sha": "ee0febde",
+      "date": "2026-08-06",
+      "author": "Jiayu Xiao",
+      "msg": "[EP] Add EP dispatch/combine benchmark with incast routing patterns (#3213)"
+    },
+    {
+      "sha": "6be6fd64",
+      "date": "2026-08-05",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Decouple PG from PyTorch (#3206)"
+    },
+    {
+      "sha": "d47f9092",
+      "date": "2026-07-31",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Fix single-rank initialization and yalantinglibs dependency (#3164)"
+    },
+    {
+      "sha": "1b7e90fc",
+      "date": "2026-07-28",
+      "author": "Zhanhao Cao",
+      "msg": "[PG][2/N] Introduce Control Plane (#2455)"
+    },
+    {
+      "sha": "001e4deb",
+      "date": "2026-07-21",
+      "author": "Xun Sun",
+      "msg": "Revert \"[PG][1/N] Decouple communication failures from membership changes (#2\u2026\" (#3011)"
+    },
+    {
+      "sha": "ff800ade",
+      "date": "2026-07-20",
+      "author": "Zhanhao Cao",
+      "msg": "[PG][1/N] Decouple communication failures from membership changes (#2338)"
+    },
+    {
+      "sha": "4293dce8",
+      "date": "2026-07-13",
+      "author": "Xun Sun",
+      "msg": "[EP] add DeepEP V2 elastic buffer (#2503)"
+    },
+    {
+      "sha": "5507b5ca",
+      "date": "2026-07-13",
+      "author": "Xun Sun",
+      "msg": "[EP] Cap active RoCE QPs for IBGDA kernels (#2544)"
+    },
+    {
+      "sha": "4e0d320a",
+      "date": "2026-06-29",
+      "author": "Lancer",
+      "msg": "[EP] Fix: Skip inactive ranks in combine reduction loop (#2653)"
+    },
+    {
+      "sha": "14375f4f",
+      "date": "2026-06-18",
+      "author": "Xun Sun",
+      "msg": "[EP] support MUSA platform (#2480)"
+    },
+    {
+      "sha": "84fc7c37",
+      "date": "2026-06-11",
+      "author": "Dayuxiaoshui",
+      "msg": "[PG] Add experimental MACA PG support (#2365)"
+    },
+    {
+      "sha": "27aaae1e",
+      "date": "2026-06-06",
+      "author": "R0CKSTAR",
+      "msg": "[PG] Build the MUSA PG extension through torchada (#2353)"
+    },
+    {
+      "sha": "47b267a5",
+      "date": "2026-06-06",
+      "author": "Jiangtian Feng",
+      "msg": "[PG] Fix data race: make running_ atomic (#2352)"
+    },
+    {
+      "sha": "938d0c70",
+      "date": "2026-06-06",
+      "author": "Jiangtian Feng",
+      "msg": "[PG] Fix null-deref on MNNVL disconnect and activeRanks leak (#2347)"
+    },
+    {
+      "sha": "92e7770f",
+      "date": "2026-06-05",
+      "author": "Xun Sun",
+      "msg": "[PG] Add MUSA build support (#2329)"
+    },
+    {
+      "sha": "2b2a46c9",
+      "date": "2026-05-20",
+      "author": "Xun Sun",
+      "msg": "[PG] support external TE (#2149)"
+    },
+    {
+      "sha": "26b24565",
+      "date": "2026-05-17",
+      "author": "Xun Sun",
+      "msg": "[PG] Fix scale-up semantics with two-phase extension protocol (#1968)"
+    },
+    {
+      "sha": "9128a63e",
+      "date": "2026-05-15",
+      "author": "Xun Sun",
+      "msg": "[PG] update EP/PG torch versions \u2014 drop 2.9.0, add 2.12.0 (#2101)"
+    },
+    {
+      "sha": "f7dd92ac",
+      "date": "2026-05-07",
+      "author": "Zhanhao Cao",
+      "msg": "[EP] Add a comprehensive test for MooncakeEP (#1695)"
+    },
+    {
+      "sha": "83ccd8a3",
+      "date": "2026-05-06",
+      "author": "Xun Sun",
+      "msg": "[PG] Inherit ProcessGroup to fix dynamic getSize() after extend_group_size_to (#2040)"
+    },
+    {
+      "sha": "741cf0ad",
+      "date": "2026-04-21",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Fix wait() hang during CUDA Graph capture (#1933)"
+    },
+    {
+      "sha": "63936723",
+      "date": "2026-04-07",
+      "author": "Yue Chen",
+      "msg": "[PG] Introduce comprehensive test suite (#1790)"
+    },
+    {
+      "sha": "8a6bd5f0",
+      "date": "2026-04-06",
+      "author": "ZiWei Yuan",
+      "msg": "[PG]: fix barrier imple problem (#1792)"
+    },
+    {
+      "sha": "c16d1131",
+      "date": "2026-04-06",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Implement graceful shutdown and reland CPU-only tests to CI (#1795)"
+    },
+    {
+      "sha": "77ae1034",
+      "date": "2026-03-29",
+      "author": "Xun Sun",
+      "msg": "[PG] Enable asynchronous recovered-rank initialization with deferred join (#1744)"
+    },
+    {
+      "sha": "af733e12",
+      "date": "2026-03-27",
+      "author": "Liu Yuji",
+      "msg": "[PG] Add GPU barrier support for mooncake-pg (#1751)"
+    },
+    {
+      "sha": "ea2824a4",
+      "date": "2026-03-24",
+      "author": "ympcMark",
+      "msg": "[EP] make num_ranks more flexible (#1725)"
+    },
+    {
+      "sha": "cc2ecf6b",
+      "date": "2026-03-23",
+      "author": "Zhanhao Cao",
+      "msg": "[PG] Fix group size expansion (#1706)"
+    },
+    {
+      "sha": "e1605e7d",
+      "date": "2026-03-18",
+      "author": "ZiWei Yuan",
+      "msg": "[PG]:  Initialize Mooncake PG integration for TENT (#1676)"
+    },
+    {
+      "sha": "5ad70764",
+      "date": "2026-03-14",
+      "author": "Yue Chen",
+      "msg": "[PG] fix: handle null backend options in Mooncake PG init (#1649)"
+    },
+    {
+      "sha": "bd4a183a",
+      "date": "2026-03-14",
+      "author": "Xun Sun",
+      "msg": "[PG] force register local memory on specific devices (#1656)"
+    },
+    {
+      "sha": "9bd773e6",
+      "date": "2026-03-12",
+      "author": "Copilot",
+      "msg": "[EP] Move EP/PG wheel-building logic from build_wheel.sh into CMake (#1616)"
+    },
+    {
+      "sha": "7a96121a",
+      "date": "2026-03-09",
+      "author": "Yufeng He",
+      "msg": "[EP] Fix EP buffer allocation for MNNVL clusters (#1629)"
+    },
+    {
+      "sha": "64627804",
+      "date": "2026-03-09",
+      "author": "Xun Sun",
+      "msg": "[PG] Remove CPU-only backend tests from CI (#1628)"
+    },
+    {
+      "sha": "59ae11fa",
+      "date": "2026-03-09",
+      "author": "ympcMark",
+      "msg": "[EP] In-place Member Update (#1630)"
+    },
+    {
+      "sha": "1a7df262",
+      "date": "2026-02-26",
+      "author": "ZhanHao Cao",
+      "msg": "[PG] Fix several memory leaks in MooncakeBackend (#1551)"
+    },
+    {
+      "sha": "83384e9c",
+      "date": "2026-02-07",
+      "author": "Xun Sun",
+      "msg": "[EP] fix a regression when IBGDA is disabled"
+    },
+    {
+      "sha": "bf46a370",
+      "date": "2026-02-06",
+      "author": "Xun Sun",
+      "msg": "[EP] Improve debug message (#1505)"
+    },
+    {
+      "sha": "24f7dd4d",
+      "date": "2026-02-05",
+      "author": "Xun Sun",
+      "msg": "[PG] Fix incorrect calculation of task_id during transfer status fetching (#1474)"
+    },
+    {
+      "sha": "c6ca713f",
+      "date": "2026-02-04",
+      "author": "Xun Sun",
+      "msg": "[EP] enlarge `kNumMaxTopK` and support more hidden size (#1492)"
+    },
+    {
+      "sha": "9bf48112",
+      "date": "2026-02-02",
+      "author": "Xun Sun",
+      "msg": "[EP] Clear sticky CUDA error on EP buffer re-init (#1470)"
+    },
+    {
+      "sha": "8284f3d8",
+      "date": "2026-01-27",
+      "author": "Xun Sun",
+      "msg": "[PG] Quick fix for reduceCpu (#1444)"
+    },
+    {
+      "sha": "0b8e1d63",
+      "date": "2026-01-27",
+      "author": "\u80e1\u7693\u7136",
+      "msg": "[PG] Support full reduction ops (Product/Min/Max) and fix reduce kernel indexing bug (#1440)"
+    },
+    {
+      "sha": "96b82a01",
+      "date": "2026-01-20",
+      "author": "Xun Sun",
+      "msg": "[PG] Always send pre-flight requests during backend init (#1409)"
+    },
+    {
+      "sha": "5dec1661",
+      "date": "2025-12-31",
+      "author": "Xun Sun",
+      "msg": "[EP] Replace _mm_pause() with PAUSE() macro (#1313)"
+    },
+    {
+      "sha": "32e60d6a",
+      "date": "2025-12-22",
+      "author": "Xun Sun",
+      "msg": "[EP] Implement send/recv (#1236)"
+    },
+    {
+      "sha": "832ae194",
+      "date": "2025-12-22",
+      "author": "Xun Sun",
+      "msg": "[EP] Implement elastic scaling up (#1173)"
+    },
+    {
+      "sha": "44dde2df",
+      "date": "2025-12-17",
+      "author": "Xun Sun",
+      "msg": "[EP] Fix the tensorSize of the barrier op (#1222)"
+    },
+    {
+      "sha": "63f395e1",
+      "date": "2025-11-28",
+      "author": "Xun Sun",
+      "msg": "[EP] Support multiple torch versions (#1098)"
+    },
+    {
+      "sha": "77c16fea",
+      "date": "2025-11-21",
+      "author": "Xun Sun",
+      "msg": "[EP] Fallback impl of Mooncake EP when IBGDA is unavailable (#1002)"
+    }
+  ],
+  "transport": [
+    {
+      "sha": "07fad165",
+      "date": "2026-07-28",
+      "author": "Akhil Langer",
+      "msg": "[TransferEngine] Add NCCL host and device transport backend (#2852)"
+    },
+    {
+      "sha": "eb417ef5",
+      "date": "2026-07-13",
+      "author": "shicanwei.scw",
+      "msg": "[CI] Migrate tone_tests to CUDA 13: pull cu130 wheel, adapt sglang/vllm paths, add NCCL env & offline model cache (#2811)"
+    }
+  ]
+}
