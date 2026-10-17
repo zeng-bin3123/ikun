@@ -30,18 +30,17 @@
 
 /* ── BF16 helpers (no __nv_bfloat16 on CUDA 10.2) ── */
 __device__ __forceinline__ float bf16_to_f32(uint16_t v) {
-    uint32_t u = (uint32_t)v << 16;
-    float f;
-    __builtin_memcpy(&f, &u, 4);
-    return f;
+    union { uint32_t u; float f; } conv;
+    conv.u = (uint32_t)v << 16;
+    return conv.f;
 }
 
 __device__ __forceinline__ uint16_t f32_to_bf16(float f) {
-    uint32_t u;
-    __builtin_memcpy(&u, &f, 4);
+    union { float f; uint32_t u; } conv;
+    conv.f = f;
     /* round-to-nearest-even */
-    u += 0x7FFF + ((u >> 16) & 1);
-    return (uint16_t)(u >> 16);
+    conv.u += 0x7FFF + ((conv.u >> 16) & 1);
+    return (uint16_t)(conv.u >> 16);
 }
 
 /* ── dtype-generic element size ── */
@@ -86,12 +85,27 @@ float applyOp(float a, float b, int op) {
     }
 }
 
-/* ── Warp-level reduce (warpSize=64 → 6 shuffle steps) ── */
+/*
+ * ── Warp-level reduce (warpSize=64 → 6 shuffle steps) ──
+ *
+ * BI-V100 warpSize=64. On CoreX/CUDA 10.2, __shfl_xor_sync
+ * takes an unsigned int mask (0xFFFFFFFF covers 32 lanes).
+ * For 64-lane warps, the hardware implicitly uses all lanes
+ * when mask = 0xFFFFFFFF (full-warp participation).
+ *
+ * If CoreX supports 64-bit masks, define INFCCL_WARP_MASK_64.
+ */
+#ifdef INFCCL_WARP_MASK_64
+  #define INFCCL_FULL_MASK 0xFFFFFFFFFFFFFFFFULL
+#else
+  #define INFCCL_FULL_MASK 0xFFFFFFFFU
+#endif
+
 __device__ __forceinline__
 float warpReduce(float val, int op) {
     #pragma unroll
     for (int offset = INFCCL_WARP_SIZE / 2; offset > 0; offset >>= 1) {
-        float other = __shfl_xor_sync(0xFFFFFFFFFFFFFFFFULL, val, offset);
+        float other = __shfl_xor_sync(INFCCL_FULL_MASK, val, offset);
         val = applyOp(val, other, op);
     }
     return val;
