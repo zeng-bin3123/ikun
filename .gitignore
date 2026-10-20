@@ -1,26 +1,6 @@
+*.o
+*.so
+*.d
+build/
 __pycache__/
 *.pyc
-*.egg-info/
-*.log
-*rizhi*
-.DS_Store
-# build 产物（源码在，可重编译）
-ex_engine/build/
-ex_engine/*/build/
-qwen3_6_scripts/*/build/
--e 
-# Build artifacts
-core/build*/
-*.o
-*.a
-*.so
-__pycache__/
-
-# Build artifacts
-build_off/
-build_on/
-build_runner/
-build_cmake_off/
-build_cmake_on/
-*.o
-*.a
